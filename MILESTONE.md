@@ -1,6 +1,6 @@
 # 🏗️ 项目里程碑 (Project Milestones)
 
-> 本文档记录整个 **AI 智能助手平台** 的版本演进与特性总结。
+> 本文档记录整个 **AI 智能助手平台** 的版本演进与特性总结。  
 > 平台由四个子项目协同构建，实现从用户交互到 AI 推理的完整链路。
 
 ---
@@ -28,103 +28,122 @@ graph LR
 
 ---
 
-## ✅ release_1.0.0 — 端到端上线
+## ✅ release_1.0.0 — 端到端上线 (企业级全特性落地版)
 
 > **状态**: 已完成  
-> **目标**: 实现从前端到后端的完整链路贯通，覆盖认证、对话、知识库、部署全流程
+> **目标**: 打造高可用、全栈国际化、具备高覆盖率测试看护与智能路由的多智能体 (Multi-Agent) 协同平台，打通全链路业务与推理闭环。
 
 ---
 
-### 一、统一认证与安全
+### 一、统一认证与安全沙箱 (Authentication & Security Sandbox)
 
-实现了基于 Casdoor 的 OAuth2 单点登录体系，覆盖从用户登录到服务间鉴权的完整安全链路。
+实现了基于 Casdoor 的 OAuth2 单点登录体系与无状态 JWT 校验，隔离了服务间鉴权的完整安全链路，并对前端全局交互与登出流程进行了体验升级。
 
 | 特性 | 涉及服务 | 说明 |
 |------|---------|------|
-| OAuth2 Authorization Code 登录 | Gateway | 完整对接 Casdoor SSO，支持账号密码、GitHub 等多种社交登录方式 |
-| JWT 签发与 HttpOnly Cookie | Gateway | 登录成功后自动生成 JWT（24h 有效期），写入 HttpOnly Cookie 防 XSS |
+| OAuth2 Code 登录 | Gateway | 对接 Casdoor SSO，支持多源社交登录与 GitHub 授权免密绑定 |
+| HttpOnly Cookie | Gateway | 自动签发 24h 有效 JWT 并写入 HttpOnly Cookie，防 XSS 攻击且支持跨子域共享 |
 | 跨子域 Cookie 共享 | Gateway | Cookie 写入 `122577.xyz` 二级域名，多子域名共享登录态 |
-| Token 透传与用户身份注入 | Gateway | 解析 JWT 后将 `X-User-Id` / `X-User-Name` / `X-User-Avatar` 注入下游请求头 |
-| 前端 SSO 集成 | ms-ng-view | `AuthGuard` + `AuthService` 实现未登录自动跳转、Token 自动携带 |
-| 登录后回源跳转 | Gateway | `RedirectSaveFilter` 记录来源页面，登录完成后自动跳回原页面 |
-| 路由白名单 | Gateway | 可配置的免鉴权路径（`IgnoreWhiteProperties`），灵活控制开放接口 |
-| 安全加固 | Gateway | Actuator 仅暴露 `/actuator/health`；无敏感信息泄露；CSRF 关闭（API 网关模式） |
-| 统一 401 处理 | Gateway + ms-ng-view | 网关返回标准 JSON（含登录 URL），前端拦截器自动处理重定向 |
+| 身份注入与透传 | Gateway | 解析 JWT 并向请求头自动注入 `X-User-Id` / `X-User-Name` / `X-User-Avatar` 属性 |
+| 前端 SSO 集成 | ms-ng-view | `AuthGuard` + `AuthService` 实现未登录自动跳转、安全提取 URL Token 与请求拦截自动携带 |
+| 登录后回源跳转 | Gateway | `RedirectSaveFilter` 记录来源页面，无状态注销时自动重定向回登录页 (FE008) |
+| 全局顶栏重构 | ms-ng-view | 封装 `MsHeaderComponent`，支持侧边栏状态联动、头像展示与 Casdoor 账号管理免密跳转 (FE008) |
+| 无状态注销与 Cookie 清理 | Gateway + 前端 | `/logout` 过滤器自动双端清理 HttpOnly Cookie，前端瞬间断开，杜绝残留登录态 (FE008) |
+| 安全沙箱加固 | Gateway | 关闭 API CSRF，配置 IgnoreWhite 放行路径；Actuator 仅暴露无害 `/actuator/health` 端点，防止敏感信息泄漏 |
 
 ---
 
-### 二、AI 对话与智能推理
+### 二、智能路由、多步推理与协程多语言 (Intelligent Routing, Inference & Thread-Safe i18n)
 
-实现了基于 LangGraph 的多步推理 Agent，支持流式输出与工具调用，提供端到端的 AI 对话体验。
+重构单体智能体为有状态多子图智能路由架构，并实现了线程与协程安全的高并发多语言动态适配。
 
 | 特性 | 涉及服务 | 说明 |
 |------|---------|------|
-| LangGraph 多节点编排 | ms-py-agent | `StateGraph` 构建思考 → 工具调用 → 生成的循环推理链路 |
-| SSE 流式对话 | ms-py-agent + ms-ng-view | 后端 `StreamingResponse` 实时输出，前端 Markdown 逐字渲染 |
-| 对话状态持久化 | ms-py-agent | `AsyncPostgresSaver` 将 LangGraph Checkpoint 写入 PostgreSQL，支持断点续聊 |
-| 聊天历史记录 | ms-py-agent + ms-ng-view | 对话结束后异步持久化问答记录，前端可查看历史会话 |
-| 动态 LLM 配置 | ms-py-agent | 运行时从 Nacos 动态获取 LLM Provider / Model / API Key，无需重启切换模型 |
-| 用户资料展示 | ms-ng-view | 从网关获取 SSO 用户信息（头像、昵称），在设置菜单中展示 |
+| LangGraph 智能路由架构 | ms-py-agent | 将单体图重构为**路由图 + 4个领域子图** (RAG, Coding, General, A2A) 架构，实现高性能意图分发 (FE013) |
+| 协程安全 Locale 中间件 | ms-py-agent | 采用 `ContextVar` 实现协程隔离的 Accept-Language 拦截器与生命周期重置，消除脏 Locale 读写 (FE018) |
+| YAML 国际化翻译引擎 | ms-py-agent | 设计中英文 YAML 翻译包，彻底重构网络超时、文件解析及子图加载等所有硬编码中文 (FE018) |
+| 前端 Signals i18n | ms-ng-view | 引入 `LanguageService` (Angular Signals) 与 `APP_INITIALIZER` 语言资源预加载，支持本地偏好持久化 (FE001) |
+| 动态意图分类 Prompt | ms-py-agent ↔ biz | LLM Fallback 分类的 System Prompt 从 Java 端动态获取，失败时平滑降级至本地预置模版 (FE013) |
+| 状态持久化与断点续聊 | ms-py-agent | `AsyncPostgresSaver` 支持 psycopg 隔离连接池读写 Checkpoint，保证 AI 状态高可靠有状态会话恢复 |
+| 动态 LLM 热重载配置 | ms-py-agent | 运行时从 Nacos 动态拉取配置，支持 LLM Provider/Model/API Key 免重启热更新 |
 
 ---
 
-### 三、知识库与 RAG
+### 三、知识库检索底座、大一统重构与物理分页 RAG (Consolidated pgvector & Physical Pagination RAG)
 
-实现了完整的检索增强生成（RAG）管线，从文档解析到向量检索再到上下文增强回答。
+消除了本地域与通用域的冗余，打通了服务器物理分页与前端响应式重载机制。
 
 | 特性 | 涉及服务 | 说明 |
 |------|---------|------|
-| 文档解析与语义分块 | ms-py-agent | 支持多格式文档解析，智能分块保持语义完整性 |
-| 向量索引与存储 | ms-java-biz + ms-py-agent | 基于 PgVector 的 Embedding Store，统一向量存储 |
-| 混合检索 | ms-py-agent | Vector 向量检索 + BM25 关键词检索 + RRF 重排序，兼顾语义与精确匹配 |
-| RAG 增强生成 | ms-py-agent | 根据 `topic_id` 自动检索相关文档，拼装上下文后交给 LLM 生成精准回答 |
-| 知识库管理界面 | ms-ng-view | 知识库列表浏览与 Embedding 管理（`knowledge` / `knowledge-embedding` 模块） |
-| 知识库业务层 | ms-java-biz | 完整的 Entity → Mapper → Service → Strategy 分层架构 |
+| 数据底座大一统重构 | ms-py-agent + biz | 废弃 FAISS 本地存储与专用食谱表，并入通用 `ms_knowledge_document` 与分块表，支持 GIN 索引扩展 (FE016) |
+| JSONB 领域元数据 | ms-py-agent + biz | 在大一统通用表中利用 **JSONB `metadata`** 列弹性存储食谱难度、分类等特定垂直领域元数据 (FE016) |
+| 物理分页双模响应 | ms-java-biz | 重写文档列表接口，整合 MyBatis-Plus 分页插件拦截器，无分页参数时返回全量以实现 100% 向下兼容 (FE017) |
+| 前端 Signals 状态下沉 | ms-ng-view | 分页状态信号 (Signals) 从表现层下沉至用例层 `KnowledgeUseCase`，利用 `effect` 监听响应式触发分页重载 (FE017) |
+| 混合检索与增强生成 | ms-py-agent | 混合 pgvector 向量搜索 + BM25 检索 + RRF 重排序，完成精准上下文装配，交付给大模型生成回答 |
+| 物理级联清理 | ms-java-biz | `ms_knowledge_chunk` 与主表建立 `ON DELETE CASCADE` 外键关联，支持主题及文档的安全级联删除 |
+| 知识库管理界面 | ms-ng-view | 完备的知识库列表浏览与 Embedding 挂载管理界面（`knowledge` 与 `knowledge-embedding` 模块） |
 
 ---
 
-### 四、MCP 协议与工具生态
+### 四、提示词中心管理、全链路错误自愈与虚拟引用源 (Prompt Management, Error Propagation & Virtual Sources)
 
-实现了 MCP over SSE 协议，解耦 AI 推理层与业务工具层，支持远程工具的动态发现与调用。
+废弃了本地硬编码 Prompt 机制，实现了完善的跨服务异常捕获与前端自愈提醒显示。
 
 | 特性 | 涉及服务 | 说明 |
 |------|---------|------|
-| MCP Server | ms-java-biz | `GET /mcp/sse` 握手建立长连接 + `POST /mcp/messages` 处理 JSON-RPC 指令 |
-| MCP Client（SSE 模式） | ms-py-agent | 通过 SSE 长连接调用 Java 后端 MCP Server，完成远程业务工具调用 |
-| MCP Client（Stdio 模式） | ms-py-agent | 支持本地 CLI 工具（如 Brave Search）的标准输入输出集成 |
-| 策略模式工具注册 | ms-java-biz | 所有工具实现 `McpTool` 接口，Spring 自动扫描并注入工具注册中心 |
-| 订单查询工具 | ms-java-biz | `OrderQueryTool`：首个业务工具示例，通过 MCP 协议对外暴露 |
-| 完整 MCP 生命周期 | ms-py-agent ↔ ms-java-biz | 连接 → 握手 → 发现（tools/list）→ 执行（tools/call）四阶段标准流程 |
+| 零硬编码 Prompt 渲染 | ms-py-agent ↔ biz | 彻底移除 Python 端硬编码提示词，强制从 Java 后端拉取模板进行渲染，实现系统提示词中心化管理 (FE012/FE016) |
+| 双级模板检索逻辑 | ms-py-agent | 渲染时优先匹配 `topic_id` 的专属模板格式，找不到时自动降级匹配通用的知识库模板 (FE016) |
+| 动态时间变量注入 | ms-py-agent | 支持模板格式中数据库配置变量，系统级自动注入 `{{current_time}}` 与 `{{today}}` 元数据 (FE016) |
+| 全链路错误码适配 | ms-py-agent ↔ biz | 引入 `error_context` 全链路捕获网络离线、模板缺失及格式校验异常，对齐 `DEP_0100`/`DEP_0503` 错误码 (FE016) |
+| 虚拟引用源警示传播 | ms-py-agent ↔ 前端 | 异常时在回复 sources 首行注入带错误码的虚拟警告卡片，前端 4-Layer 架构零改动实现美观报错提醒 (FE016) |
 
 ---
 
-### 五、微服务治理与基础设施
+### 五、能力集、MCP 插件生态与防腐解耦 (Capability Sets, MCP Plugins & Isolation)
 
-实现了基于 Nacos 的服务注册发现与统一配置管理，所有服务通过 Docker 容器化运行。
+解耦了推理大脑与实体业务工具集，支持动态的连接注册、生命周期管理与弹性容错。
 
 | 特性 | 涉及服务 | 说明 |
 |------|---------|------|
-| Nacos 服务注册与发现 | 全部服务 | 各服务启动自动注册，运行时动态发现上下游地址 |
-| Nacos 统一配置管理 | 全部服务 | 敏感配置（数据库连接、OAuth Secret、API Key）统一由 Nacos 管理 |
-| Spring Cloud Gateway 路由 | Gateway | 按路径前缀分发请求到 ms-py-agent 和 Java 业务服务 |
-| SSE 流式透传 | Gateway | 网关对 SSE 长连接不缓冲，透明代理到前端 |
-| PostgreSQL + PgVector | ms-py-agent + ms-java-biz | 同时承载业务数据和向量数据 |
-| Docker 容器网络 | 全部服务 | 所有服务通过 `pei-network` 互通 |
-| Nginx 反向代理 | 基础设施 | 统一 HTTPS 入口，正确透传 `X-Forwarded-*` 头部 |
+| MCP 插件白名单管理 | ms-java-biz | 引入 `ms_mcp_plugin` 数据表管理连接配置，提供 `ToggleMcpPlugin` 服务及用户偏好开关持久化 (FE014) |
+| 动态能力集注册 | ms-py-agent ↔ biz | 基于官方 `mcp` 协议 SDK，启动 lifespan 时动态向 Python 大脑注册已启用工具，消除 tools 与 plugins 新增硬编码 (FE013/FE014) |
+| 弹性 Fallback 机制 | ms-py-agent | Nacos 无法获取 Java MCP 插件或加载失败时，自动重试，最终降级挂载本地 filesystem 插件 (FE014) |
+| MCP SSE 长连接服务端 | ms-java-biz | `GET /mcp/sse` 握手长连接与 `POST /mcp/messages` 指令分发，支持异步 emitter 非阻塞响应 |
+| Stdio CLI 插件兼容 | ms-py-agent | 支持标准输入输出流集成外部工具（如 Brave Search），提供丰富的混合能力集 |
+| 订单查询工具 | ms-java-biz | 落地 `OrderQueryTool` (实现 `McpTool` 策略模式接口)，作为首个标准 MCP 远程业务执行工具并入注册中心 |
 
 ---
 
-### 六、CI/CD 与自动化部署
+### 六、微服务治理、可观测性与全链路体验 (Governance, Observability & Full-link UX)
 
-实现了四个项目的全自动构建部署管线，支持多分支策略和多平台部署。
+构建了高可用的链路分析底座，并完成了前端排版引擎与防抖控制的开发。
 
 | 特性 | 涉及服务 | 说明 |
 |------|---------|------|
-| GitHub Actions 自动构建 | 全部服务 | Push 到 master 或 feature_* PR 自动触发构建 |
-| Docker 多架构镜像 | Gateway + ms-java-biz | 同时构建 `linux/amd64` 和 `linux/arm64` 镜像 |
-| VPS 自动部署 | Gateway + ms-py-agent + ms-java-biz | 构建完成后通过 SSH 自动拉取镜像并重启容器 |
-| Cloudflare Pages 部署 | ms-ng-view | 前端自动部署到 Cloudflare CDN，支持分支环境隔离（master=正式 / dev=测试） |
-| 环境变量安全管理 | 全部服务 | 敏感信息通过 GitHub Secrets / Nacos 注入，代码中零硬编码 |
+| 链路追踪与请求闭环 | Gateway | `TraceIdFilter` 采用非阻塞 doFinally 拦截，全局 INFO 级输出请求路径、耗时、状态与 Trace-Id (FE010) |
+| 异常消息脱敏清洗 | Gateway | 拦截下游异常并清洗，对 ConnectException 进行脱敏返回友好提示，严禁原始堆栈向前端暴露 (FE010) |
+| 前端 Markdown 渲染 | ms-ng-view | 全局提供 `ngx-markdown` 引擎，对流式 SSE 数据进行多级标题、代码块、表格的逐字实时渲染与样式适配 (FE011) |
+| 流式请求暂停与防抖 | ms-ng-view | 对输入框进行 300ms 交互防抖；发送按钮实时绑定 RxJS 生成订阅，支持点击“暂停”切断 SSE 生成 (FE011) |
+| 中央业务错误码注册 | 跨服务 | 统一维护 `ErrorCodeRegistry.md`，对齐 DEP 前缀与段位码，前端 HttpInterceptor 实现统一鉴权拦截 (FE010) |
+| Nacos 配置发现治理 | 跨服务 | 所有服务基于 Nacos 实现自注册与运行时动态路由，多模块无感关联 |
+| JVM 内存与 GC 调优 | 网关+业务 | 设置 MaxMetaspace 内存限制红线并配置 G1 GC，实现低延迟高吞吐并发响应 |
+
+---
+
+### 七、全方位测试防护与自动化 CI/CD 质量门禁 (Total Test Protection & CI/CD Pipelines)
+
+推行 TDD 研发流程，首度引入了全工程、双层数据库隔离的自动化测试套件与自动化 CI 构建编译管线。
+
+| 特性 | 涉及服务 | 说明 |
+|------|---------|------|
+| 双层数据库隔离测试 | ms-java-biz | 本地默认执行 H2 内存数据库测试；CI (GitHub Actions) 自动拉起 **Testcontainers (PostgreSQL 16)** 验证物理 Schema |
+| 架构守护与切片测试 | 全服务 | 运用 `@WebMvcTest` 与 Architecture 守护类对网关 filter 链 order 优先级进行断言 (FE002/FE003) |
+| DDD 静态架构卫兵 | ms-java-biz | 新增 `ArchitectureDDDGuardTest` (ArchUnit 静态守护)，断言领域层、应用层单向依赖纯洁性，防止未来代码劣变 |
+| 协程隔离并发验证 | ms-py-agent | 在 `test_i18n.py` 中并发启动 50 个异步协程，断言 contextvar 语言上下文的完全隔离，无任何内存交叉脏读 (FE018) |
+| GitHub Actions 编译管线 | 全部服务 | 覆盖 Docker 多架构构建（`linux/amd64`, `linux/arm64`），向主分支合并自动触发 |
+| VPS 自动 SSH 部署部署 | 全部服务 | 构建成功后 SSH 远程安全拉取、隔离配置注入并自动重启镜像，实现完整的 CD 闭环 |
+| Cloudflare Pages 部署 | ms-ng-view | 前端自动部署到 Cloudflare CDN，支持主分支与特性分支的隔离部署环境 |
+| 自动化单元/集成测试 | 全部服务 | 覆盖 74 个自动化用例（Java Gateway 20、Java Biz 22、Python 16、Angular Jest 16），全链路 100% 绿灯看护 (FE003) |
 
 ---
 
@@ -132,16 +151,16 @@ graph LR
 
 ### release_1.1.0 — 体验优化与稳定性
 - [ ] Token 自动续期（Refresh Token 机制）
-- [ ] Chat 消息的 Like/Dislike 反馈
+- [ ] Chat 消息 of Like/Dislike 反馈
 - [ ] 对话内容复制 / 导出 / 重新生成
 - [ ] 知识库文档上传与处理进度展示
 - [ ] 错误边界与优雅降级
-- [ ] **跨服务系统级鉴权 (System-to-System Auth)**: 移除 `/mcp/**` 白名单，改用 Casdoor Client Credentials 令牌
+- [ ] **跨服务系统级鉴权 (System-to-System Auth)**: 跨服务 RPC 引入 JWT/OIDC 签名认证，解除白名单，实现安全闭环 (FE015)
 
 ### release_1.2.0 — 多模态与工具扩展
 - [ ] MCP 插件市场（前端管理界面）
 - [ ] 更多 MCP 工具（网络搜索、日历、邮件等）
-- [ ] 多模态输入（图片 / 文件上传）
+- [ ] 多模态输入（图片 / File 上传）
 - [ ] AI 计费与用量统计面板（AiBillingFilter）
 
 ### release_2.0.0 — 企业级能力
@@ -154,4 +173,4 @@ graph LR
 ---
 
 > 📅 文档维护：随版本迭代持续更新  
-> 📝 最后更新：2026-04-24
+> 📝 最后更新：2026-05-19

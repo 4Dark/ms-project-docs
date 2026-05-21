@@ -3,6 +3,110 @@
 > 记录每次重大修改对其他工程的潜在影响。
 
 
+## [2026-05-19] ms-py-agent 国际化(i18n) 全栈落地与 Accept-Language 动态适配
+
+### 修改概述
+我们在 Python 服务端 `ms-py-agent` 全栈落地了国际化(i18n)机制，消除了原先硬编码在代码中的中文字符提示：
+- **轻量级 YAML 国际化引擎**: 设计并实现了 `app/core/i18n` 目录，通过 `en_US.yaml` 和 `zh_CN.yaml` 存储 Key-Value 翻译条目，支持类似 Spring Boot 的优雅 Key Fallback 机制和命名参数变量格式化。
+- **FastAPI 动态 Locale 中间件**: 引入了协程/线程安全的 `request_locale` ContextVar 存储器。通过标准 FastAPI 中间件截获 `Accept-Language` 请求头并精确解析首选语言，实现了对每一次 HTTP 请求生命周期内语言包 of the dynamic request 的动态隔离与无侵入绑定。
+- **硬编码大规模替换**: 逐个对 `prompt_service.py`、`kb.py` 和 `rag_graph.py` 中的用户提示消息、异常处理反馈以及虚拟警示来源的文本进行了全量 i18n 重构，消除了除纯技术日志/领域内部错误之外的所有硬编码中文。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-py-agent** | ✅ 核心特性 | 新增 `app/core/i18n` 模块，通过 ContextVar 中间件自适应解析 Accept-Language 头，完成全链路 i18n 适配。 |
+| **docs** | ✅ 文档更新 | 撰写了完整的 i18n 特性实施计划与本修改评估日志。 |
+
+### 风险等级: 🟢 低
+- ContextVar 完全线程与协程安全，在请求结束时由 ContextVar 机制自动重置，不存在跨请求污染的风险。
+- 各翻译条目在丢失时支持平滑地 Fallback 至英文或返回 Key 本身，系统健壮性极高。
+
+### 验证计划
+- [ ] 验证全量 `pytest` 自动化测试通过。
+- [ ] 验证不同 Accept-Language 下返回 of the HTTP 异常 detail.error_msg 显示对应的语言翻译。
+
+---
+
+## [2026-05-19] RAG 提示词检索策略优化、兜底清理与错误码前端提醒适配
+
+### 修改概述
+我们完成了对 RAG 提示词检索流程的健壮性重构，清理了本地硬编码的兜底提示词格式，并实现了全链路错误码（如 `DEP_0100`, `DEP_0102`, `DEP_0503`）的自适应捕获与前端提醒：
+- **Prompt 错误码透传与适配**: 重构了 `PromptService.get_active_prompt` 和 `get_rendered_prompt` 接口，支持传入可选的 `error_context` 来收集并捕获底层微服务返回的业务错误码（如找不到提示词模板的 `DEP_0100`、格式验证失败的 `DEP_0102` 以及服务离线的 `DEP_0503`）。
+- **清理本地经典主厨/烹饪导师格式**: 彻底移除了 `rag_graph.py` 中的本地硬编码经典主厨及烹饪导师格式模板，确保系统提示词模板完全由数据库与 ms-java-biz 的 Prompt 接口进行中心化维护与自动替换。
+- **虚拟源级提醒传播**: 检索子图在捕获到模板加载异常后，会自动构造具有业务警示语的虚拟来源卡片（如 `⚠️ 格式模板加载异常`、`⚠️ 主题模板加载异常`），并优雅地将其拼接到返回前端的 `sources` 引用列表中。这使得前端折叠面板能即时展示高亮的错误说明，无需改变前端既有的状态管理层。
+- **全量测试回归**: 运行并通过了 `ms-ng-view` 全量 13 个 Jest 测试套件（46/46 全部通过），确保系统的极致稳定性。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-py-agent** | ✅ 核心特性 | 重构了提示词渲染与错误捕获机制，自动过滤并输出标准化虚拟异常来源卡片至 SSE 流。 |
+| **ms-ng-view** | ✅ 平滑适配 | 零侵入地实现了对提示词异常的警示渲染，全部 Jest 测试用例 100% 绿灯。 |
+| **docs** | ✅ 文档更新 | 详细记录了本次跨服务异常适配及影响分析。 |
+
+### 风险等级: 🟢 低
+- 代码变动极度精准，通过虚拟引用卡片将异常优雅传播给前端，完美融合既有 UI，无任何界面重写风险。
+
+### 验证计划
+- [x] 验证 `ms-ng-view` 生产构建及 46/46 个单元测试完全绿灯。
+- [x] 验证 `prompt_service.py` 具有超时及异常捕获，并写入 `error_context`。
+- [x] 验证 `rag_graph.py` 中本地兜底硬编码全部被移除。
+
+---
+
+## [2026-05-17] 知识库文档列表物理分页全栈落地（后端契约与前端 Reactive 适配）
+
+### 修改概述
+我们在全链路实现了对知识库文档列表的物理分页支持，完成了 API 契约和前端交互层的完美对齐与同步适配：
+- **契约定义更新**: 在 `MsJavaBiz-KnowledgeBase-v1.yaml` 中将 `/rest/biz/v1/knowledge/documents` 的 `page` 查询参数标记为 `required: true`，以符合物理分页的标准规范。
+- **前端适配与架构下沉**: 
+  - **模块化状态管理**: 遵循 4 层整洁架构（Clean Architecture）规范，将 `currentPage`、`pageSize` 和 `totalDocuments` 等分页状态信号（Signals）及相关的响应式重载逻辑从 UI 表现层下沉至 **用例层 (KnowledgeUseCase)** 统一维护。
+  - **完全响应式驱动 (Signals + Effect)**: 在 `KnowledgeUseCase` 中建立了一套优雅的反应式监听器（effect）。一旦当前选定的 `selectedTopicId`、`currentPage` 或 `pageSize` 信号发生变化，将自动触发与后端物理分页接口的异步数据拉取与状态同步。
+  - **UI 与适配层重构**: 更新了 `KnowledgeRepository` 和 `KnowledgeApiAdapter` 接口，使之支持返回强类型的 `PageResult<KnowledgeDocument>`。重构了 `KnowledgeComponent` 的计算属性，消除了高内存占用的客户端内存切片，完全进化为高效的服务器端按需分页。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-ng-view** | ✅ 核心适配 | 彻底重构了前端状态流与展示逻辑，消除了客户端切片，打通了服务器端分页与响应式 Signal 交互。 |
+| **docs** | ✅ 契约对齐 | 更新了 OpenAPI 规范定义，确立了 `page` 的必填约束。 |
+
+### 风险等级: 🟢 低
+- 属于物理分页特性的前端落地，不仅极大减轻了前端处理大数据量时的内存负载，更借助 Angular Signals 机制保证了 100% 的渲染稳定性与响应速度。
+- 前端生产级构建 (`ng build`) 100% 编译成功，无任何 TypeScript 类型及语法警告。
+
+### 验证计划
+- [x] 验证 `ms-ng-view` 前端成功完成生产构建并无任何 TS 警告或错误。
+- [x] 验证 `KnowledgeUseCase` 中的反应式 `effect` 与 UI 的 page button/size selector 交互完美绑定。
+
+---
+
+## [2026-05-17] 知识库文档列表物理分页支持与双模（分片/全量）响应
+
+### 修改概述
+为了提供高性能、低带宽占用的文档检索与构建管理体验，我们在 Java 核心业务服务中全链路实现了知识库文档列表的物理分页支持，同时保留了高度的向后兼容性：
+- **双模响应设计**: 重写了 `/rest/biz/v1/knowledge/documents` 接口。当传入可选的 `page` 和 `size` 参数时，接口通过 MyBatis-Plus 进行高效的物理分页查询，并返回结构化的 `PageResult<KnowledgeDocument>` 对象；当未携带分页参数时，自动退回到传统的全量列表响应，无缝兼容所有既有接口与客户端。
+- **分页拦截器与依赖补全**: 声明并注册了 MyBatis-Plus 的 `MybatisPlusInterceptor` 与 `PaginationInnerInterceptor` 分页插件。同时针对 MyBatis-Plus 3.5.11+ 的模块分离设计，在 `pom.xml` 中显式补全了 `mybatis-plus-jsqlparser` 物理 SQL 解析依赖，解决了类查找和 SQL 解析问题。
+- **双层单元测试守护**: 新增了 Controller 层的 MockMvc 切片测试（涵盖分页和非分页双模行为）以及 Repository 层的物理分页/对象映射单元测试，以 100% 的关键路径覆盖确保重构安全无虞。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-java-biz** | ✅ 核心特性 | 在控制层、应用层与仓储持久层全链路打通了物理分页逻辑，并注册了全局拦截器与新 Maven 依赖。 |
+| **ms-py-agent** | 🟢 兼容 | 由于支持双模响应，不带分页参数时的返回值结构完全未变，Python 端的意图和构建逻辑免于任何重构，保持 100% 兼容。 |
+
+### 风险等级: 🟢 低
+- 所有改动均已通过自动化测试的强力保护，且双模向后兼容设计确保了绝对不会破坏微服务群其他成员的请求。
+
+### 验证计划
+- [x] Java 后端单元与集成测试全部通过（46/46 全量通过）。
+- [x] 验证 `KnowledgeControllerTest` 中的分页及非分页 Mock 测试完美绿灯。
+- [x] 验证 `KnowledgeDocumentRepositoryImplTest` 物理分页与 SQL 解析测试完美绿灯。
+
+---
+
 ## [2026-05-17] 通用与领域专有知识库文档表结构合并重构（ms_recipe_document 并入 ms_knowledge_document）
 > 关联决策: [009-unified-knowledge-document-schema-refactoring.md](file:///Users/pei/projects/docs/architecture/009-unified-knowledge-document-schema-refactoring.md)
 

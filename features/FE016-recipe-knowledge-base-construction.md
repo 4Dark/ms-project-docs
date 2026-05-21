@@ -50,3 +50,24 @@
   - `GET /rest/biz/v1/tasks/{taskId}`: 获取通用任务的当前进度信息。
 - **ms-py-agent**:
   - `POST /rest/agent/v1/knowledge/build` (前端经由网关调用): 触发知识库构建。后端在 `ms_task_record` 中初始化任务并异步启动，同步返回 `taskId` 供前端轮询。
+
+## 6. RAG 提示词检索与错误码提醒优化 (2026-05-19)
+为了提升美食 AI 助手对提示词定制以及底层异常的感知与容错性，我们在 RAG (检索增强生成) 流程的生成集成阶段落地了多项架构级重构：
+
+1. **动态模板获取与变量替换纯净化**：
+   - **清除本地兜底**：彻底删除了 Python 端硬编码的经典主厨和烹饪导师系统提示词，强制所有人格与系统提示词由 `ms-java-biz` 的统一管理端从 PostgreSQL 中读取并进行外部下发。
+   - **双级检索逻辑**：优先使用 `topic_id` 查询匹配该主题的专属格式提示词，若无专属模板，则自动降级匹配通用的知识库提示词。
+   - **动态数据库变量注入**：支持将格式变量保存在数据库中维护，并在此基础上系统级自动注入 `{{current_time}}` (当前时间) 与 `{{today}}` (今天日期) 等时间元数据。
+
+2. **全局错误码适配与可观测性集成**：
+   - 重构了 `PromptService` 跨服务调用逻辑，提供 `error_context` 捕获链。
+   - **全链路错误映射**：
+     - `DEP_0100` (提示词不存在)：模板未找到。
+     - `DEP_0102` (格式校验失败)：模板中包含未定义或冲突的变量。
+     - `DEP_0503` (服务暂不可用)：微服务未向 Nacos 注册或发生连接/读取超时。
+     - `DEP_0500` (外部调用异常)：意外的服务器内部错误。
+   - 所有异常与错误码信息已与 [/docs/api-contracts/MsJavaBiz-PromptManagement-v1.yaml](file:///Users/pei/projects/docs/api-contracts/MsJavaBiz-PromptManagement-v1.yaml) 及全局 [/docs/api-contracts/ErrorCodeRegistry.md](file:///Users/pei/projects/docs/api-contracts/ErrorCodeRegistry.md) 完成完美对齐与同步维护。
+
+3. **前端零侵入“虚拟源级警示”传播方案**：
+   - 检索子图在捕获到提示词加载异常时，会主动在回复消息的召回来源 `sources` 最上方拼接“虚拟警示来源”（例如 `⚠️ 格式模板加载异常` 或 `⚠️ 主题模板加载异常`），详细指明故障错误码（如 `DEP_0503`）以及系统采取的自动降级问答机制。
+   - 该方案在保障**前端整洁架构 (4-Layer Clean Architecture)** 零逻辑改动的前提下，使得前端在渲染对话卡片折叠面板时，能将错误原因及排查方案醒目、美观地展现给终端用户，达成了极高可用性的故障自愈感知。
