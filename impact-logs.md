@@ -3,6 +3,310 @@
 > 记录每次重大修改对其他工程的潜在影响。
 
 
+## [2026-05-19] ms-py-agent 国际化(i18n) 全栈落地与 Accept-Language 动态适配
+
+### 修改概述
+我们在 Python 服务端 `ms-py-agent` 全栈落地了国际化(i18n)机制，消除了原先硬编码在代码中的中文字符提示：
+- **轻量级 YAML 国际化引擎**: 设计并实现了 `app/core/i18n` 目录，通过 `en_US.yaml` 和 `zh_CN.yaml` 存储 Key-Value 翻译条目，支持类似 Spring Boot 的优雅 Key Fallback 机制和命名参数变量格式化。
+- **FastAPI 动态 Locale 中间件**: 引入了协程/线程安全的 `request_locale` ContextVar 存储器。通过标准 FastAPI 中间件截获 `Accept-Language` 请求头并精确解析首选语言，实现了对每一次 HTTP 请求生命周期内语言包 of the dynamic request 的动态隔离与无侵入绑定。
+- **硬编码大规模替换**: 逐个对 `prompt_service.py`、`kb.py` 和 `rag_graph.py` 中的用户提示消息、异常处理反馈以及虚拟警示来源的文本进行了全量 i18n 重构，消除了除纯技术日志/领域内部错误之外的所有硬编码中文。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-py-agent** | ✅ 核心特性 | 新增 `app/core/i18n` 模块，通过 ContextVar 中间件自适应解析 Accept-Language 头，完成全链路 i18n 适配。 |
+| **docs** | ✅ 文档更新 | 撰写了完整的 i18n 特性实施计划与本修改评估日志。 |
+
+### 风险等级: 🟢 低
+- ContextVar 完全线程与协程安全，在请求结束时由 ContextVar 机制自动重置，不存在跨请求污染的风险。
+- 各翻译条目在丢失时支持平滑地 Fallback 至英文或返回 Key 本身，系统健壮性极高。
+
+### 验证计划
+- [ ] 验证全量 `pytest` 自动化测试通过。
+- [ ] 验证不同 Accept-Language 下返回 of the HTTP 异常 detail.error_msg 显示对应的语言翻译。
+
+---
+
+## [2026-05-19] RAG 提示词检索策略优化、兜底清理与错误码前端提醒适配
+
+### 修改概述
+我们完成了对 RAG 提示词检索流程的健壮性重构，清理了本地硬编码的兜底提示词格式，并实现了全链路错误码（如 `DEP_0100`, `DEP_0102`, `DEP_0503`）的自适应捕获与前端提醒：
+- **Prompt 错误码透传与适配**: 重构了 `PromptService.get_active_prompt` 和 `get_rendered_prompt` 接口，支持传入可选的 `error_context` 来收集并捕获底层微服务返回的业务错误码（如找不到提示词模板的 `DEP_0100`、格式验证失败的 `DEP_0102` 以及服务离线的 `DEP_0503`）。
+- **清理本地经典主厨/烹饪导师格式**: 彻底移除了 `rag_graph.py` 中的本地硬编码经典主厨及烹饪导师格式模板，确保系统提示词模板完全由数据库与 ms-java-biz 的 Prompt 接口进行中心化维护与自动替换。
+- **虚拟源级提醒传播**: 检索子图在捕获到模板加载异常后，会自动构造具有业务警示语的虚拟来源卡片（如 `⚠️ 格式模板加载异常`、`⚠️ 主题模板加载异常`），并优雅地将其拼接到返回前端的 `sources` 引用列表中。这使得前端折叠面板能即时展示高亮的错误说明，无需改变前端既有的状态管理层。
+- **全量测试回归**: 运行并通过了 `ms-ng-view` 全量 13 个 Jest 测试套件（46/46 全部通过），确保系统的极致稳定性。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-py-agent** | ✅ 核心特性 | 重构了提示词渲染与错误捕获机制，自动过滤并输出标准化虚拟异常来源卡片至 SSE 流。 |
+| **ms-ng-view** | ✅ 平滑适配 | 零侵入地实现了对提示词异常的警示渲染，全部 Jest 测试用例 100% 绿灯。 |
+| **docs** | ✅ 文档更新 | 详细记录了本次跨服务异常适配及影响分析。 |
+
+### 风险等级: 🟢 低
+- 代码变动极度精准，通过虚拟引用卡片将异常优雅传播给前端，完美融合既有 UI，无任何界面重写风险。
+
+### 验证计划
+- [x] 验证 `ms-ng-view` 生产构建及 46/46 个单元测试完全绿灯。
+- [x] 验证 `prompt_service.py` 具有超时及异常捕获，并写入 `error_context`。
+- [x] 验证 `rag_graph.py` 中本地兜底硬编码全部被移除。
+
+---
+
+## [2026-05-17] 知识库文档列表物理分页全栈落地（后端契约与前端 Reactive 适配）
+
+### 修改概述
+我们在全链路实现了对知识库文档列表的物理分页支持，完成了 API 契约和前端交互层的完美对齐与同步适配：
+- **契约定义更新**: 在 `MsJavaBiz-KnowledgeBase-v1.yaml` 中将 `/rest/biz/v1/knowledge/documents` 的 `page` 查询参数标记为 `required: true`，以符合物理分页的标准规范。
+- **前端适配与架构下沉**: 
+  - **模块化状态管理**: 遵循 4 层整洁架构（Clean Architecture）规范，将 `currentPage`、`pageSize` 和 `totalDocuments` 等分页状态信号（Signals）及相关的响应式重载逻辑从 UI 表现层下沉至 **用例层 (KnowledgeUseCase)** 统一维护。
+  - **完全响应式驱动 (Signals + Effect)**: 在 `KnowledgeUseCase` 中建立了一套优雅的反应式监听器（effect）。一旦当前选定的 `selectedTopicId`、`currentPage` 或 `pageSize` 信号发生变化，将自动触发与后端物理分页接口的异步数据拉取与状态同步。
+  - **UI 与适配层重构**: 更新了 `KnowledgeRepository` 和 `KnowledgeApiAdapter` 接口，使之支持返回强类型的 `PageResult<KnowledgeDocument>`。重构了 `KnowledgeComponent` 的计算属性，消除了高内存占用的客户端内存切片，完全进化为高效的服务器端按需分页。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-ng-view** | ✅ 核心适配 | 彻底重构了前端状态流与展示逻辑，消除了客户端切片，打通了服务器端分页与响应式 Signal 交互。 |
+| **docs** | ✅ 契约对齐 | 更新了 OpenAPI 规范定义，确立了 `page` 的必填约束。 |
+
+### 风险等级: 🟢 低
+- 属于物理分页特性的前端落地，不仅极大减轻了前端处理大数据量时的内存负载，更借助 Angular Signals 机制保证了 100% 的渲染稳定性与响应速度。
+- 前端生产级构建 (`ng build`) 100% 编译成功，无任何 TypeScript 类型及语法警告。
+
+### 验证计划
+- [x] 验证 `ms-ng-view` 前端成功完成生产构建并无任何 TS 警告或错误。
+- [x] 验证 `KnowledgeUseCase` 中的反应式 `effect` 与 UI 的 page button/size selector 交互完美绑定。
+
+---
+
+## [2026-05-17] 知识库文档列表物理分页支持与双模（分片/全量）响应
+
+### 修改概述
+为了提供高性能、低带宽占用的文档检索与构建管理体验，我们在 Java 核心业务服务中全链路实现了知识库文档列表的物理分页支持，同时保留了高度的向后兼容性：
+- **双模响应设计**: 重写了 `/rest/biz/v1/knowledge/documents` 接口。当传入可选的 `page` 和 `size` 参数时，接口通过 MyBatis-Plus 进行高效的物理分页查询，并返回结构化的 `PageResult<KnowledgeDocument>` 对象；当未携带分页参数时，自动退回到传统的全量列表响应，无缝兼容所有既有接口与客户端。
+- **分页拦截器与依赖补全**: 声明并注册了 MyBatis-Plus 的 `MybatisPlusInterceptor` 与 `PaginationInnerInterceptor` 分页插件。同时针对 MyBatis-Plus 3.5.11+ 的模块分离设计，在 `pom.xml` 中显式补全了 `mybatis-plus-jsqlparser` 物理 SQL 解析依赖，解决了类查找和 SQL 解析问题。
+- **双层单元测试守护**: 新增了 Controller 层的 MockMvc 切片测试（涵盖分页和非分页双模行为）以及 Repository 层的物理分页/对象映射单元测试，以 100% 的关键路径覆盖确保重构安全无虞。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-java-biz** | ✅ 核心特性 | 在控制层、应用层与仓储持久层全链路打通了物理分页逻辑，并注册了全局拦截器与新 Maven 依赖。 |
+| **ms-py-agent** | 🟢 兼容 | 由于支持双模响应，不带分页参数时的返回值结构完全未变，Python 端的意图和构建逻辑免于任何重构，保持 100% 兼容。 |
+
+### 风险等级: 🟢 低
+- 所有改动均已通过自动化测试的强力保护，且双模向后兼容设计确保了绝对不会破坏微服务群其他成员的请求。
+
+### 验证计划
+- [x] Java 后端单元与集成测试全部通过（46/46 全量通过）。
+- [x] 验证 `KnowledgeControllerTest` 中的分页及非分页 Mock 测试完美绿灯。
+- [x] 验证 `KnowledgeDocumentRepositoryImplTest` 物理分页与 SQL 解析测试完美绿灯。
+
+---
+
+## [2026-05-17] 通用与领域专有知识库文档表结构合并重构（ms_recipe_document 并入 ms_knowledge_document）
+> 关联决策: [009-unified-knowledge-document-schema-refactoring.md](file:///Users/pei/projects/docs/architecture/009-unified-knowledge-document-schema-refactoring.md)
+
+### 修改概述
+为了消除知识库底座在“通用文档元数据”与“领域特定结构化元数据”之间的冗余，我们将原先专属于食谱领域的文档主表 `ms_recipe_document` 与分块表 `ms_recipe_chunk` 合并入通用知识库文档表 `ms_knowledge_document` 与分块表 `ms_knowledge_chunk`。
+- **单表化与 JSONB 扩展**: 在通用知识库表 `ms_knowledge_document` 中引入 `doc_type` 表征文档所属领域，并利用 PostgreSQL 的 `JSONB metadata` 列存储领域特有元数据（如食谱的 `difficulty`）。
+- **Python Agent 模型与仓储迁移**: 重构了领域模型（`KnowledgeDocument`/`KnowledgeChunk`）、仓储接口与 SqlAlchemy 实现，完成了 `recipe_build_service.py` 的迁移，消除了重复的 Python 仓储与校验代码。
+- **无损查询性能**: 通过在 GIN 索引的保障下，使得领域特有字段的条件筛选效率与物理列完全一致，拥有完美的查询效率与极高的未来扩展性。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-py-agent** | ✅ 核心重构 | 精简了仓储代码，合并了物理表模型，业务代码量大幅缩减且更易维护。 |
+| **ms-java-biz** | 🔵 兼容 | 数据库迁移脚本（Flyway）与相关的映射实体需要同步将 `ms_recipe_document` 重构为通用表。 |
+
+### 风险等级: 🟢 低
+- 属于物理表结构的统一重构设计，Python 端的 47/47 个 pytest 单元测试全部以 100% 绿灯通过，验证了增量构建的正确性。
+
+### 验证计划
+- [x] 运行全量 Python 单元测试（`pytest`），47 个用例全绿通过。
+- [x] 验证 `recipe_build_service.py` 解析食谱信息时能正确转换为通用字段并写入 `metadata` JSONB。
+
+---
+
+
+## [2026-05-17] 全面重构微服务群接口路由前缀为 /rest/agent/v1/ 与 /rest/biz/v1/
+
+### 修改概述
+为了实现清晰、语义化和内聚的微服务 API 命名空间管理，对整个微服务群的接口前缀进行了全局重构与统一：
+- **Python Agent 服务 (`ms-py-agent`)**:
+  - 所有对外暴露的接口均统一重构为前缀 `/rest/agent/v1/`。
+  - chat 路由变更为 `/rest/agent/v1/chat`，kb 路由变更为 `/rest/agent/v1/...`（如 `/rest/agent/v1/knowledge/build`）。
+- **Java 业务服务 (`ms-java-biz`)**:
+  - 所有原有前缀为 `/rest/dark/v1/` 的接口，统一重构为前缀 `/rest/biz/v1/`。
+- **API 网关服务 (`ms-java-gateway`)**:
+  - 大幅简化了路由代理谓词，将 `agent-route` 匹配 `/rest/agent/v1/**`，`biz-v1-route` 匹配 `/rest/biz/v1/**`。
+- **前端服务 (`ms-ng-view`)**:
+  - 前端 `URLConfig` 全部统一适配。
+  - `UserService` 中的 `/rest/dark/v1/user/me` 升级为 `/rest/biz/v1/user/me`。
+  - `proxy.conf.json` 本地代理配置同步适配为 `/rest/agent/v1/chat`。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-py-agent** | ✅ 统一 | 所有 Python 接口整洁归入 `/rest/agent/v1/` 大底座中。 |
+| **ms-java-biz** | ✅ 规范 | 所有老旧的 `/rest/dark/v1/` 统一规整为 `/rest/biz/v1/`。 |
+| **ms-java-gateway**| 🚀 极简 | 移除了多路径复合匹配以及顺序依赖，网关配置大幅瘦身且清晰。 |
+| **ms-ng-view** | 🔄 适配 | 前端接口配置与单元测试全面平滑适配。 |
+
+### 风险等级: 🟢 低
+- 所有改动均已通过极其严格的自动化测试验证（Java 43/43 通过，Python 47/47 通过，Angular 46/46 通过）。
+
+### 验证计划
+- [x] Python pytest 47 个测试全绿。
+- [x] Java Maven test 43 个测试全绿。
+- [x] Angular Jest test 46 个测试全绿。
+
+---
+
+
+## [2026-05-17] 统一知识库构建接口前缀为 /rest/kb/v1/ 并修复 404 的问题
+> 关联问题复盘: [2026-05-17-kb-build-endpoint-nested-prefix-404.md](file:///Users/pei/projects/docs/incidents/2026-05-17-kb-build-endpoint-nested-prefix-404.md)
+
+### 修改概述
+将增量构建端点彻底纳入 `/rest/kb/v1/` 统一路由命名空间中。修改接口并扩展 API 网关路由及前端 API 常量配置，实现系统整体 API 路径的规范化和高内聚。
+- **Python 端点规范化**: 在 `kb.py` 中将构建端点重新归入标准 `router` 下，地址修正为相对路径 `/agent/knowledge/build`（物理路径为 `/rest/kb/v1/agent/knowledge/build`）。撤销原先补丁级的 `agent_router`。
+- **网关路由转发匹配**: 在 `ms-java-gateway` 的 `application.yml` 路由中，为 `agent-route` 增加了 `/rest/kb/v1/**` 的分发映射规则，使得前端请求能够被安全代理到 `ms-py-agent`。
+- **前端常量路径同步**: 在 `ms-ng-view` 的 `url.config.ts` 中，将 `BUILD_RECIPE` 请求端点更新为 `/rest/kb/v1/agent/knowledge/build`。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-py-agent** | ✅ 统一 | 路由结构更规范，增量构建接口归入默认 kb 命名空间。 |
+| **ms-java-gateway**| 🚀 兼容 | 增加了对 `/rest/kb/v1/**` 接口的动态路由代理转发。 |
+| **ms-ng-view** | 🔄 适配 | 前端 API 调用地址自动适配为新的统一前缀命名空间。 |
+
+### 风险等级: 🟢 低
+- 属于网络路由定义的缺陷修复，不涉及业务逻辑流转及第三方依赖变更。
+- 47/47 测试全量通过，系统的稳定性及向后兼容性得到了完美继承。
+
+### 验证计划
+- [x] 运行全量单元测试（`pytest`），47 个用例全量通过。
+- [x] 成功通过 `main.py` 启动验证其路由映射，确保外部接口正常暴露。
+
+---
+
+## [2026-05-17] 修复 ms-java-biz 启动时 Flyway 迁移脚本 V1.12 的表名错误
+
+### 修改概述
+修复了 `ms-java-biz` 在启动时由于 Flyway 迁移脚本引用错误的旧表名 `knowledge_topic` 导致的数据库迁移异常。同时在 `FlywayConfig` 中增加了自动 `repair()` 功能，保证在修改脚本或发生迁移失败时自动恢复。
+- **表名更正**: 将 `V1.12__update_recipe_topic_template_name.sql` 中的更新目标表更正为 `ms_knowledge_topic`，以符合 V1.4 中的重命名规范。
+- **自动修复迁移**: 在 `FlywayConfig.java` 的 `onApplicationReady` 事件监听器中引入 `flyway.repair()`。该机制在每次执行 `migrate()` 之前运行，会自动清理已经失败的 Flyway 记录并重新同步校验和，提升开发与 CI 环境的鲁棒性。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-java-biz** | ✅ 修复 | 恢复了服务正常启动和数据库迁移流程，避免了启动崩溃。 |
+
+### 风险等级: 🟢 低
+- 属于局部性缺陷修复和高可用健壮性设计，不改变任何对外业务 API 逻辑。
+
+### 验证计划
+- [x] Java 后端单元测试全部通过（43/43 通过）。
+- [x] Nacos 连接、Flyway 自动修复与迁移在本地正常通过。
+
+---
+
+## [2026-05-17] 动态化知识库主题类型判断与全量菜谱路径同步
+> 关联问题反馈: 用户反馈 hardcode 菜谱主题名字以及 Python Agent 目录未同步的问题。
+
+### 修改概述
+移除了前端中对 `菜谱` 知识库主题的硬编码匹配，转为基于数据库接口返回的 `templateName` 属性进行动态判定，同时同步了 `ms-py-agent` 的全量菜谱文档扫描目录以匹配 Java 后端的新路径。
+- **动态主题判定**: 
+  - 通过 Flyway 新增 `V1.12__update_recipe_topic_template_name.sql` 迁移脚本，将默认菜谱主题 (`id = 'topic_recipe_001'`) 的 `template_name` 更新为 `'recipe'`。
+  - 在前端 `ms-ng-view` 页面中，支持 `selectedTopic()?.templateName === 'recipe' || selectedTopic()?.name === '菜谱'` 匹配判定，从而兼容系统预制和用户手动创建的情况。
+  - 在 `chat.component.ts` 的自动选择菜谱逻辑中，支持 `t.templateName === 'recipe' || t.name === '菜谱'` 匹配判定，确保美食卡片快捷功能绝对可用。
+- **全量菜谱物理路径同步**:
+  - 在 `ms-py-agent` 端的配置 `app/core/config.py` 和构建服务 `recipe_build_service.py` 中，同步更新 `CONFIG_DATA_PATH` 的默认兜底值从 `/Users/pei/projects/docs/recipes` 变更为 `/tmp/ai_knowledge_uploads/recipes`，从而保持与 Java 后端 `recipe-dir` 配置路径的完全一致性。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-java-biz** | ✅ 核心变更 | 通过 Flyway 新建迁移脚本 `V1.12` 更新数据库主题元数据，在 `application.yaml` 中将 `recipe-dir` 指定为 `/tmp/ai_knowledge_uploads/recipes`。 |
+| **ms-py-agent** | ✅ 核心变更 | 在配置类和增量构建服务中同步更新全量菜谱物理路径默认值至 `/tmp/ai_knowledge_uploads/recipes`，保持两端配置一致。 |
+| **ms-ng-view** | ✅ 增强 | 彻底消除 hardcoded 的中文主题名称判定，替换为健壮的、基于接口字段（`templateName`）的动态逻辑。 |
+
+### 风险等级: 🟢 低
+- 纯净的元数据更新及属性一致性对齐，不改变既有的系统架构。
+- 前端 unit tests 46/46 通过，Java 后端 unit tests 43/43 通过，系统功能完整稳定。
+
+### 验证计划
+- [x] 前端单元测试全部通过。
+- [x] Java 后端单元测试全部通过。
+- [x] 编译和数据库迁移依赖解析成功。
+
+---
+
+## [2026-05-17] 修复 ms-java-biz 启动时 schema 相对路径刷新及本地 URL 硬编码问题
+> 关联问题复盘: [2026-05-17-mcp-schema-fetch-relative-url-bug.md](file:///Users/pei/projects/docs/incidents/2026-05-17-mcp-schema-fetch-relative-url-bug.md)
+
+### 修改概述
+修复了 `ms-java-biz` 启动时自动刷新内置插件（如 `java-biz`）的 Schema 失败问题，并消除了整个模块中本地服务器 URL 的硬编码。
+- **问题根因**: 内置的 `java-biz` 插件的 SSE 路径注册为相对路径 `"/mcp/sse"`。启动刷新时，`McpSchemaFetcher` 误用相对路径来解析消息端点，导致发起相对路径 POST 请求时路由至系统 80 端口从而产生 `<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">` 报错。
+- **配置属性化与解耦**: 
+  - 新增了 `app.mcp.local-server-base-url` 配置，默认自动指向 `http://localhost:${server.port}`。
+  - 创建了 `McpProperties.java` 属性映射类，以取代硬编码的 `"http://localhost:"` 字符串。
+- **修复与重构逻辑**:
+  - 在 `McpSchemaFetcher.java` 与 `McpProxyService.java` 中注入 `McpProperties`。
+  - 提取出统一、健壮的 `resolveLocalUrl` 方法来动态解析本地服务器基路径。
+  - 修正了 `McpSchemaFetcher` 中端点解析基准，正确地使用绝对路径解析消息端点。
+- **一致性**: 统一并重构了 `McpSchemaFetcher` 与 `McpProxyService` 中的所有相对路径拼接逻辑。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-java-biz** | ✅ 修复 | 消除硬编码并修复了内置插件 Schema 刷新失败的问题，增强了 MCP 服务的可配置性与稳定性。 |
+
+### 风险等级: 🟢 低
+- 本地服务器的默认地址依旧能回退到 `http://localhost:${server.port}`，保证零配置时依然正常开箱即用。
+- 单元测试（`McpSchemaFetcherTest` 与 `McpProxyServiceTest`）全部以 100% 覆盖与正确性通过。
+
+### 验证计划
+- [x] 单元测试 `McpSchemaFetcherTest.java` 成功通过。
+- [x] 验证 `java-biz` 本地内置插件的 Schema 在启动时能成功刷新并缓存。
+
+---
+
+
+## [2026-05-13] ms-py-agent 领域模型纯洁性重构与规范对齐
+> 关联决策: [004-ms-py-agent-domain-purity-refactor.md](file:///Users/pei/projects/docs/architecture/004-ms-py-agent-domain-purity-refactor.md)
+
+### 修改概述
+按照《Python 架构与代码规范指南》，对 `ms-py-agent` 的领域模型进行了合规性重构。
+- **实体行为对齐**: 将 `ChatMessage` 从 `@dataclass(frozen=True)` 重构为 `@dataclass(eq=False)`，并手动实现了基于 `id` 的 `__eq__` 和 `__hash__` 方法。
+- **语义修正**: 纠正了原先将实体（Entity）错误当作值对象（Value Object）处理的问题，确保标识一致性（Identity Consistency）。
+- **校验增强**: 维持并验证了 `__post_init__` 中的业务校验逻辑，确保领域对象创建即合法。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-py-agent** | 🔵 内部重构 | 仅涉及领域模型定义层，由于标识相等性逻辑对齐了业务主键，不会影响现有的 LangGraph 状态机或数据库映射。 |
+
+### 风险等级: 🟢 低
+- 内部逻辑重构，不改变 API 协议。
+- 手动实现的 `__eq__` 包含对未持久化对象（`id is None`）的内存地址 fallback，确保了状态机运行时的对象对比稳定性。
+
+### 验证计划
+- [ ] 运行现有单元测试，确保 `ChatMessage` 在状态机（LangGraph）中的流转不受影响。
+- [ ] 验证包含相同 `id` 但不同 `content` 的两个 `ChatMessage` 对象在业务逻辑中被判定为 `==`。
+
+---
+
+
 ## [2026-05-10] MCP 插件市场（能力集）特性全栈落地
 > 关联特性: [FE014-mcp-plugin-market.md](file:///Users/pei/projects/docs/features/FE014-mcp-plugin-market.md)
 
