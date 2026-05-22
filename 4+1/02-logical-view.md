@@ -8,10 +8,81 @@ date: 2026-05-20 10:07:58
 
 ## 1. 视图概述
 
-### 1.1 定位
+### 1.1 顶层系统架构 (System Landscape)
+
+我们将系统分为四层：接入层、应用层、数据层、基础设施层。
+
+```mermaid
+graph TD
+    %% ==========================================
+    %% 外部层
+    %% ==========================================
+    User(("用户 / 前端"))
+    OneAPI["One-API 聚合网关\n(大模型分发)"]
+    LLM_Provider["外部大模型 API\n(OpenAI / DeepSeek)"]
+    
+    %% ==========================================
+    %% 网关层 (Spring Cloud Gateway)
+    %% ==========================================
+    subgraph "接入层 (DMZ)"
+        Gateway["ms-java-gateway\n(Spring Cloud Gateway + WebFlux)"]
+        style Gateway fill:#f3e5f5,stroke:#4a148c
+    end
+
+    %% ==========================================
+    %% 服务治理
+    %% ==========================================
+    subgraph "基础设施 (Infra)"
+        Nacos["Nacos Cluster\n(注册 & 配置中心)"]
+        style Nacos fill:#e3f2fd,stroke:#0d47a1
+    end
+
+    %% ==========================================
+    %% 内部服务层
+    %% ==========================================
+    subgraph "应用层 (Microservices)"
+        %% Java 服务
+        JavaApp["ms-java-biz服务\n(Spring Boot + LangChain4j)\n职责：RAG, 业务工具, MCP Host"]
+        %% ms-java-biz
+        style JavaApp fill:#e8f5e9,stroke:#1b5e20
+        
+        %% ms-py-agent
+        PythonApp["ms-py-agent 服务\n(FastAPI + LangGraph)\n职责：复杂推理, 编排"]
+        style PythonApp fill:#fff3e0,stroke:#e65100
+        
+        %% 互通
+        JavaApp <==>|"内部调用 (HTTP/RPC)"| PythonApp
+        JavaApp -.-> Nacos
+        PythonApp -.-> Nacos
+    end
+
+    %% ==========================================
+    %% 数据层
+    %% ==========================================
+    subgraph "数据层 (Persistence)"
+        PgVector[("PostgreSQL (PgVector)\n长期记忆")]
+        Mongo[("MongoDB\n短期记忆 (Chat Memory)")]
+    end
+
+    %% ==========================================
+    %% 连线
+    %% ==========================================
+    User ==>|"1. HTTPS/WebSocket"| Gateway
+    Gateway ==>|"2. 路由分发"| JavaApp
+    Gateway ==>|"2. 路由分发"| PythonApp
+    
+    JavaApp --> PgVector
+    
+    %% LLM 调用流 (直连 One-API)
+    JavaApp -.->|"3. 请求 LLM (直连)"| OneAPI
+    PythonApp -.->|"3. 请求 LLM (直连)"| OneAPI
+    OneAPI -.->|"4. 渠道分发"| LLM_Provider
+```
+
+### 1.2 定位
 逻辑视图侧重于系统的功能性需求，描述了系统内部的模块划分、领域边界以及它们之间的协作关系。在本项目中，逻辑架构严格遵循领域驱动设计（DDD）的思想进行系统级别的解耦。
 
-### 1.2 目标读者
+### 1.3 目标读者
 
 | 角色 | 关注点 |
 |---|---|
@@ -20,7 +91,7 @@ date: 2026-05-20 10:07:58
 | 技术管理者 | 系统分层、技术选型、演进路线 |
 | 安全工程师 | 数据流威胁分析 |
 
-### 1.3 文档结构
+### 1.4 文档结构
 按三层模型组织：逻辑模型（What - 业务功能）→ 数据模型（What - 数据结构）→ 技术模型（How - 技术方案），最后补充威胁分析、设计原则、跨视图关系和用例追溯矩阵。
 
 ## 2. 逻辑模型（业务功能）
