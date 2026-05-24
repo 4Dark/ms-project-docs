@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>企业级 AI Agent 架构蓝图 HLD - 深色</title>
+    <link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * { box-sizing: border-box; }
+        body { background-color: #e2e8f0; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .slide-container {
+            width: 1280px; height: 720px; background-color: #0b0f19; color: #f8fafc;
+            font-family: 'Urbanist', 'Noto Sans SC', sans-serif; padding: 25px 35px;
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        
+        .header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .header { border-left: 5px solid #3b82f6; padding-left: 15px; }
+        .header h1 { font-size: 28px; margin: 0; font-weight: 700; color: #fff; letter-spacing: 1px; }
+        
+        .legend { background: rgba(30, 41, 59, 0.8); border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; display: flex; gap: 15px; font-size: 12px; }
+        .status-current { color: #e2e8f0; } .status-current i { color: #10b981; }
+        .status-planned { color: #f59e0b; font-style: italic; } .status-planned i { color: #f59e0b; }
+
+        .arch-wrapper { display: flex; flex-direction: column; gap: 8px; flex-grow: 1; }
+        .layer-title { font-size: 13px; font-weight: 700; color: #60a5fa; margin-bottom: 6px; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+        .vertical-title { writing-mode: vertical-rl; text-orientation: upright; margin: 0; text-align: center; width: 22px; letter-spacing: 2px; color: #94a3b8; font-weight: 700; font-size: 13px;}
+
+        .box { background: rgba(15, 23, 42, 0.8); border: 1px solid #334155; border-radius: 6px; padding: 10px; }
+        
+        /* 1. 门户层 */
+        .portal-container { display: flex; flex-direction: column; gap: 6px; }
+        .inner-row { display: flex; gap: 10px; background: rgba(30, 41, 59, 0.5); border-radius: 4px; padding: 8px; }
+        
+        .layer-app .item { flex: 1; background: rgba(51, 65, 85, 0.4); text-align: center; padding: 6px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.05); }
+        .layer-app .item h4 { margin: 0 0 4px 0; color: #e2e8f0; font-size: 13px; }
+        .layer-app .item p { margin: 0; font-size: 11px; color: #94a3b8; }
+
+        .layer-studio { background: rgba(37, 99, 235, 0.05); border: 1px dashed rgba(59, 130, 246, 0.5); }
+        .layer-studio .studio-grid { display: flex; justify-content: space-between; gap: 10px; flex-grow: 1; }
+        .studio-item { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; background: rgba(59, 130, 246, 0.1); border-radius: 4px; padding: 6px; font-size: 12px; color: #bfdbfe; font-weight: 600; }
+
+        /* 兼容性修复：高对比度实心消息总线 */
+        .event-bus {
+            display: block; width: 100%;
+            background-color: #1e293b; border: 2px solid #d97706; border-radius: 6px; padding: 8px; text-align: center;
+            font-size: 12px; font-weight: 700; color: #fbbf24; margin: 4px 0; letter-spacing: 1px;
+        }
+        .event-bus i { margin-right: 6px; }
+
+        /* 2. 编排层 */
+        .orch-grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr 0.9fr; gap: 8px; }
+        .orch-module { background: rgba(30, 41, 59, 0.5); border-radius: 4px; padding: 8px; }
+        .orch-module h4 { font-size: 12px; color: #cbd5e1; margin: 0 0 6px 0; border-bottom: 1px solid #334155; padding-bottom: 4px; display: flex; justify-content: space-between; }
+        .tag-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+        .tag { background: #0f172a; color: #cbd5e1; font-size: 11px; padding: 4px 6px; border-radius: 3px; border: 1px solid #334155; white-space: nowrap; }
+        .tag-highlight { background: rgba(59, 130, 246, 0.15); border-color: #3b82f6; color: #60a5fa; }
+        .tag-alert { background: rgba(239, 68, 68, 0.1); border-color: #ef4444; color: #f87171; font-weight: 600;}
+
+        /* 3. 网关层 */
+        .middleware-row { display: flex; gap: 10px; }
+        .gateway-box { flex: 1; background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.3); padding: 8px; border-radius: 6px;}
+        .gateway-box h4 { color: #fbbf24; margin: 0 0 6px 0; font-size: 12px; text-align: center; }
+        .gateway-box .tag-grid { justify-content: center; }
+        
+        /* 4. 模型与数据底座层 */
+        .layer-data { background: #0f172a; border: 1px solid #1e293b; }
+        .layer-data .data-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .data-module { background: rgba(30, 41, 59, 0.5); border-top: 2px solid #3b82f6; border-radius: 4px; padding: 8px; }
+        .data-module h4 { font-size: 12px; margin: 0 0 6px 0; color: #e2e8f0; display: flex; align-items: center; gap: 6px; }
+        .data-module ul { margin: 0; padding-left: 18px; color: #94a3b8; font-size: 11px; line-height: 1.6; }
+
+        /* 5. 基础平台层 */
+        .layer-infra { background: #020617; border: 1px dashed #475569; padding: 10px; }
+        .infra-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .infra-pillar { border-top: 2px solid #334155; padding-top: 6px; }
+        .infra-pillar h4 { font-size: 11px; color: #94a3b8; margin: 0 0 6px 0; text-transform: uppercase; }
+        .infra-tags { display: flex; flex-direction: column; gap: 4px; }
+        .infra-tag { font-size: 11px; color: #cbd5e1; padding: 4px 6px; display: flex; align-items: center; gap: 6px; }
+        .infra-tag i { width: 14px; text-align: center; flex-shrink: 0; }
+        
+        .planned-module { border: 1px solid #f59e0b !important; background: rgba(245, 158, 11, 0.1) !important; color: #f59e0b !important; border-radius: 4px; }
+        .planned-module i { color: #f59e0b !important; }
+        .planned-text { font-size: 9px; margin-left: auto; color: #f59e0b; font-weight: 600; white-space: nowrap; }
+    </style>
+</head>
+<body>
+
+<div class="slide-container">
+    <div class="header-container">
+        <div class="header">
+            <h1>企业级 AI Agent 架构蓝图 HLD</h1>
+        </div>
+        <div class="legend">
+            <span class="status-current"><i class="fa-solid fa-circle-check"></i> 现存能力 / 已实现</span>
+            <span class="status-planned"><i class="fa-solid fa-clock"></i> 规划蓝图 / 暂未实现</span>
+        </div>
+    </div>
+
+    <div class="arch-wrapper">
+        
+        <div class="box">
+            <div class="layer-title"><i class="fa-solid fa-desktop"></i> 智能体交互与构建门户 (Application & Builder Portal)</div>
+            <div class="portal-container">
+                <div class="inner-row layer-app">
+                    <div class="vertical-title">运行态</div>
+                    <div class="item"><h4>分析型应用 (Analytic)</h4><p>数据洞察 / 运营大屏 / 自动对账</p></div>
+                    <div class="item"><h4>业务型应用 (Business)</h4><p>流程合规 / 智能客服 / 辅助决策</p></div>
+                    <div class="item"><h4>执行型应用 (Action)</h4><p>跨系统 RPA / IT 自动化 / 告警自愈</p></div>
+                </div>
+                <div class="inner-row layer-studio">
+                    <div class="vertical-title" style="color: #60a5fa;">构建态</div>
+                    <div class="studio-grid">
+                        <div class="studio-item"><i class="fa-solid fa-diagram-project"></i> 工作流画布 (DAG)</div>
+                        <div class="studio-item"><i class="fa-solid fa-code"></i> Prompt 调试 IDE</div>
+                        <div class="studio-item"><i class="fa-solid fa-vial-circle-check"></i> 智能体评估沙箱</div>
+                        <div class="studio-item"><i class="fa-solid fa-rocket"></i> 应用发布与版本管理</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="event-bus">
+            <i class="fa-solid fa-bolt"></i> 分布式消息总线 (Kafka / Redis) - 支撑应用级异步请求转发、多体协同通信 (A2A) 与长时任务挂起回调 <span class="planned-text">[规划中]</span>
+        </div>
+
+        <div class="box layer-orchestration">
+            <div class="layer-title"><i class="fa-solid fa-brain"></i> 智能编排框架与中枢引擎 (Orchestration Engine)</div>
+            <div class="orch-grid">
+                <div class="orch-module">
+                    <h4>多体协同引擎 (Multi-Agent)</h4>
+                    <div class="tag-grid">
+                        <span class="tag tag-highlight">Supervisor 路由调配</span>
+                        <span class="tag tag-highlight">Critic-Refiner 反思</span>
+                        <span class="tag">Plan-and-Solve 规划</span>
+                        <span class="tag tag-alert"><i class="fa-solid fa-hand"></i> HITL 人工审核</span>
+                    </div>
+                </div>
+                <div class="orch-module">
+                    <h4>插件与工具中心 (Registry)</h4>
+                    <div class="tag-grid">
+                        <span class="tag tag-highlight">API 凭证隔离 (Auth)</span>
+                        <span class="tag">OpenAPI 规范解析</span>
+                        <span class="tag">MCP 标准资产网关</span>
+                        <span class="tag">内置函数集</span>
+                    </div>
+                </div>
+                <div class="orch-module">
+                    <h4>记忆管控 (Memory)</h4>
+                    <div class="tag-grid">
+                        <span class="tag tag-highlight">短期工作流 (Buffer)</span>
+                        <span class="tag">长期向量记忆空间</span>
+                        <span class="tag planned-module">实体状态图谱 (Entity)</span>
+                    </div>
+                </div>
+                <div class="orch-module">
+                    <h4>知识工程 (RAG)</h4>
+                    <div class="tag-grid">
+                        <span class="tag">多模态语义解析</span>
+                        <span class="tag">混合检索 (Hybrid)</span>
+                        <span class="tag planned-module">CDC 流式实时入库</span>
+                    </div>
+                </div>
+                <div class="orch-module">
+                    <h4>可观测 (Trace)</h4>
+                    <div class="tag-grid">
+                        <span class="tag tag-highlight">Agent 链路追踪</span>
+                        <span class="tag">Token 消耗统计</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="middleware-row">
+            <div class="gateway-box">
+                <h4><i class="fa-solid fa-shield-cat"></i> AI 安全合规网关</h4>
+                <div class="tag-grid">
+                    <span class="tag">PII 动态脱敏</span><span class="tag">意图越界拦截</span><span class="tag">输出内容审核</span>
+                </div>
+            </div>
+            <div class="gateway-box">
+                <h4><i class="fa-solid fa-route"></i> LLM 路由网关 (基于 new-api)</h4>
+                <div class="tag-grid">
+                    <span class="tag">多模型平滑回退</span><span class="tag">全局并发限流</span><span class="tag">Semantic Cache</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="box layer-data">
+            <div class="layer-title"><i class="fa-solid fa-layer-group"></i> AI 模型与数据湖仓平台 (Lakehouse & MaaS)</div>
+            <div class="data-grid">
+                <div class="data-module">
+                    <h4><i class="fa-solid fa-microchip"></i> MaaS 模型中台</h4>
+                    <ul><li>通用基座与专有大模型</li><li>特征提取 (Embedding)</li><li><span class="planned-text">[规划]</span> vLLM 推理加速与微调</li></ul>
+                </div>
+                <div class="data-module">
+                    <h4><i class="fa-solid fa-water"></i> 混合数据湖仓</h4>
+                    <ul><li>贴源数据 (ODS) 与数仓</li><li>批流一体处理框架</li><li>异构源联邦分析查询</li></ul>
+                </div>
+                <div class="data-module">
+                    <h4><i class="fa-solid fa-diagram-project"></i> 知识资产库</h4>
+                    <ul><li>多模态非结构化语料库</li><li>Milvus 大规模向量空间</li><li><span class="planned-text">[规划]</span> 企业级业务知识图谱</li></ul>
+                </div>
+                <div class="data-module">
+                    <h4><i class="fa-solid fa-scale-balanced"></i> 数据治理平台</h4>
+                    <ul><li>统一数据权限与租户隔离</li><li>全局元数据与血缘追踪</li><li><span class="planned-text">[规划]</span> 数据质量闭环监控</li></ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="box layer-infra">
+            <div class="layer-title"><i class="fa-solid fa-server"></i> 标准化云原生底座 (Infrastructure)</div>
+            <div class="infra-grid">
+                <div class="infra-pillar">
+                    <h4>云原生与算力编排</h4>
+                    <div class="infra-tags">
+                        <div class="infra-tag"><i class="fa-solid fa-cloud"></i><span>公有云 / 私有云异构底座</span></div>
+                        <div class="infra-tag"><i class="fa-brands fa-docker"></i><span>Docker / K8s 容器化调度</span></div>
+                    </div>
+                </div>
+                <div class="infra-pillar">
+                    <h4>网络与微服务治理</h4>
+                    <div class="infra-tags">
+                        <div class="infra-tag"><i class="fa-solid fa-network-wired"></i><span>Nacos 微服务注册与发现</span></div>
+                        <div class="infra-tag"><i class="fa-solid fa-lock"></i><span>Tailscale 跨域零信任组网</span></div>
+                    </div>
+                </div>
+                <div class="infra-pillar">
+                    <h4>安全与身份鉴权</h4>
+                    <div class="infra-tags">
+                        <div class="infra-tag"><i class="fa-solid fa-user-shield"></i><span>Casdoor 全局统一 IAM</span></div>
+                        <div class="infra-tag"><i class="fa-brands fa-cloudflare" style="color:#ea580c;"></i><span>Cloudflare 边界防御 WAF</span></div>
+                        <div class="infra-tag planned-module"><i class="fa-solid fa-shield-halved"></i><span>Sentinel 核心熔断降级</span></div>
+                    </div>
+                </div>
+                <div class="infra-pillar">
+                    <h4>系统观测与统一运维</h4>
+                    <div class="infra-tags">
+                        <div class="infra-tag"><i class="fa-solid fa-server"></i><span>Nginx 统一核心流量分发</span></div>
+                        <div class="infra-tag planned-module"><i class="fa-solid fa-chart-pie"></i><span>Prometheus / Grafana 指标</span></div>
+                        <div class="infra-tag planned-module"><i class="fa-solid fa-list"></i><span>ELK 分布式日志汇聚平台</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+</body>
+</html>
