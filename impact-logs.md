@@ -9,15 +9,18 @@
 我们完成了对阅后即焚（Ephemeral Room）业务下短链重定向和 WebSocket 连接在生产及预览分支环境下的高可用修复：
 - **Cloudflare Pages 代理与显式重定向治理**: 修改了前端 `_redirects` 规则，将 `/s/*` 的短链接口重写代理（200）改为显式 302 重定向，彻底解决了 Pages 对外部 API 隐式代理不支持导致的 `:splat` 参数重定向丢失问题。
 - **后端动态 Referer 感知与绝对重定向**: 在 `ShortLinkController` 中通过注入 `Referer` 请求头，动态解析请求来源域名（Scheme + Authority），实现绝对路径 302 重定向跳转回对应前端域名（如 `https://feature-ephemerallink.ms-ng-view.pages.dev/room/{code}`）。该做法完美避开了 API 网关相对重定向产生的 404 故障，无缝支持了生产环境和 Cloudflare Pages 各预览分支域名。
+- **无 Referer 兜底绝对路径重定向**: 针对用户直接输入/粘贴短链或社交应用内打开无 `Referer` 头访问导致后端退化为相对重定向而路由至网关域名（引致 404 故障）的问题，引入了 `app.frontend-url` 配置。当 `Referer` 为空或不可解析时，自动兜底重定向至默认前端域名（如 `https://122577.xyz/room/{code}`），彻底消除了 404 隐患。
+- **移除失焦内容隐藏与全局遮罩 (UI 体验升级)**: 彻底移除了当页面失去焦点（如切换标签页、浏览器最小化或移动端切换应用）时自动对通讯空间内容模糊并覆盖全局灰色遮罩的特性，删除了相关的组件层 `HostListener` 和模版级 overlay DOM 结构，极大改善了高频切换窗口时的交互连贯性与整体用户体验。
+- **STOMP 断线重连时间调优**: 在前端 `ephemeral.adapter.ts` 的 STOMP over WebSocket 连接参数中，将 `reconnectDelay`（断线自动重连间隔时间）从原先的 2000ms 调整为更加合理、对底层服务器更加友好的 8000ms (8秒)，在高频重连与连接抖动时能显著降低网络重试风暴与资源开销。
 - **自适应 WebSocket 直连连接**: 在 `ephemeral.adapter.ts` 中设计了自适应 WebSocket URL 解析方法 `getWsUrl()`。在 localhost 开发环境，仍保持连接本地前端 Host 并利用 `proxy.conf.json` 执行网关代理；在生产环境与 CDN 托管的分支预览环境下，直接提取 `environment.VITE_API_URL` 中的后端 API 域名建立 secure WebSocket（`wss:`）直连。这规避了 Pages 平台对 WebSocket 协议升级的阻断，保证了消息频道的绝对连通。
-- **单元测试保障**: 新增了 `ShortLinkControllerTest.java` 并通过了全部 4 个 TDD 测试场景，确保了绝对路径解析和相对路径降级逻辑 100% 正常。
+- **单元测试保障**: 新增并更新了 Java 端 `ShortLinkControllerTest.java` 覆盖 Referer 匹配、无 Referer 兜底等全部 TDD 测试场景；同时通过了前端全量 14 个 Jest 测试套件（52/52 全部成功通过），确保两端架构的高度健壮与稳固。
 
 ### 涉及范围
 
 | 子工程 | 影响程度 | 分析 |
 |--------|----------|------|
-| **ms-ng-view** | ✅ 核心特性 | 优化了 WebSocket (STOMP) 连接域名构建逻辑，消除了 Pages 环境下的网络重连报错。更新了 `_redirects` 配置文件。 |
-| **ms-java-biz** | ✅ 核心特性 | 重构了短链跳转控制层以接收 `Referer` 实施绝对域名跳转，编写并跑通了 ShortLink 单元测试。 |
+| **ms-ng-view** | ✅ 核心特性 | 优化了 WebSocket 连接域名与 STOMP 重连参数（8s）；彻底移除了失焦模糊内容遮罩（isBlurred）相关的逻辑与 HTML 代码。 |
+| **ms-java-biz** | ✅ 核心特性 | 重构了短链跳转控制层以接收 `Referer` 实施绝对域名跳转，引入配置兜底，编写并跑通了 ShortLink 单元测试。 |
 | **docs** | ✅ 文档更新 | 撰写了完整的事故 RCA 复盘日志，并更新了本影响评估汇总。 |
 
 ### 风险等级: 🟢 低

@@ -47,10 +47,12 @@
    /ws/ephemeral/*  https://dark.122577.xyz/ws/ephemeral/:splat  200
    ```
 
-### 步骤 2：后端动态 Referer 解析及绝对路径重定向 (TDD 落地)
-1. **控制器改造**：在 `ShortLinkController.java` 中，注入 HTTP 请求头 `@RequestHeader(value = "Referer", required = false) String referer`，解析并提取请求来源前端域名（Scheme + Authority，例如 `https://feature-ephemerallink.ms-ng-view.pages.dev`）。
-2. **动态跳转**：若解析出合法 Referer 域名，则执行 **绝对路径 302 重定向** 至 `[RefererBase]/room/{code}`，将用户无缝送回原始请求的前端域名（无论是生产域名还是 Pages 预览分支域名）；若无 Referer 头，则降级为相对路径重定向。
-3. **单元测试与集成测试**：编写了 `ShortLinkControllerTest.java` 覆盖了绝对域名跳转和降级相对路径跳转，所有测试 100% 成功通过，全局 clean & test 构建成功。
+### 步骤 2：后端动态 Referer 解析及绝对路径与默认兜底重定向 (TDD 落地)
+1. **配置属性定义**: 在 `application.yaml` 和 `application-test.yml` 中新增 `app.frontend-url` 默认前端基地址配置，默认指向生产前端 `https://122577.xyz`。
+2. **控制器改造与默认兜底**: 在 `ShortLinkController.java` 中，注入 HTTP 请求头 `@RequestHeader(value = "Referer", required = false) String referer`，解析并提取请求来源前端域名（Scheme + Authority）。
+   - 若解析出合法 Referer 域名，则执行 **绝对路径 302 重定向** 至 `[RefererBase]/room/{code}`，保证预览分支域名的高级还原；
+   - 若无 Referer 请求头（如用户直接复制/粘贴链接或在社交应用内首次点击），自动回退并采用 `app.frontend-url` 默认前端基地址，同样发起 **绝对路径 302 重定向** 至 `[defaultFrontendUrl]/room/{code}`。这彻底解决了相对路径降级被网关解析在 `https://dark.122577.xyz/room/{code}` 下而引发 404 故障的问题。
+3. **单元测试与集成测试**: 编写并重构了 `ShortLinkControllerTest.java` 中的测试场景，全量覆盖了带 Referer 的跨子域绝对路径重定向、不带 Referer 的默认配置绝对路径重定向及 410 过期短链逻辑，所有测试 100% 通过。
 
 ### 步骤 3：自适应 WebSocket 连接优化
 在前端 `ephemeral.adapter.ts` 中实现了自适应 WebSocket 连接逻辑：
