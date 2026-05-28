@@ -1,0 +1,271 @@
+openapi: 3.0.0
+info:
+  title: MsJavaBiz Ephemeral Chat API
+  description: 阅后即焚式临时通讯空间接口。支持端到端加密、匿名访问与 TTL 生命周期管理。
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8281
+    description: API Gateway
+
+paths:
+  /rest/biz/v1/ephemeral/rooms:
+    post:
+      summary: 创建通讯空间
+      description: 创建一个新的阅后即焚房间，支持自定义存活时间。无需认证。
+      tags:
+        - Ephemeral
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoomRequest'
+      responses:
+        '200':
+          description: 成功创建房间
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  roomId:
+                    type: string
+                    description: 房间 UUID
+                  shortCode:
+                    type: string
+                    description: 8位 Base62 短码（用于生成短链）
+
+  /s/{code}:
+    get:
+      summary: 短链重定向
+      description: 通过 8 位短码访问房间，执行 302 重定向至前端页面。如果已销毁或过期，返回 410。
+      tags:
+        - Ephemeral
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 8位 Base62 短码
+      responses:
+        '302':
+          description: 成功重定向到前端页面
+        '410':
+          description: 房间已销毁或已过期
+
+  /rest/biz/v1/ephemeral/rooms/{code}:
+    get:
+      summary: 获取房间元信息
+      description: 获取房间的 TTL 状态及标题，不包含任何聊天数据。
+      tags:
+        - Ephemeral
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomInfoResponse'
+        '410':
+          description: 房间已销毁或已过期
+
+  /rest/biz/v1/ephemeral/rooms/{roomId}/join:
+    post:
+      summary: 加入房间
+      description: 参与者注册其本地生成的匿名 ID，更新房间的活跃状态。
+      tags:
+        - Ephemeral
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinRoomRequest'
+      responses:
+        '200':
+          description: 成功加入
+
+  /rest/biz/v1/ephemeral/rooms/{roomId}/messages:
+    post:
+      summary: 发送加密消息
+      description: 接收前端 AES-GCM 加密后的密文进行持久化，并广播。
+      tags:
+        - Ephemeral
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '200':
+          description: 消息发送并存储成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EphemeralMessage'
+    get:
+      summary: 轮询拉取历史消息
+      description: WebSocket 降级方案，拉取指定 ID 之后的未删除消息记录。
+      tags:
+        - Ephemeral
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: afterId
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+          description: 上次拉取的最后消息 ID
+      responses:
+        '200':
+          description: 成功返回消息列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EphemeralMessage'
+
+  /rest/biz/v1/ephemeral/rooms/{roomId}/me:
+    delete:
+      summary: 退出并删除本人消息
+      description: 参与者主动退出，并软删除所有自己发送的消息记录。
+      tags:
+        - Ephemeral
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: participantId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 参与者的匿名 UUID
+      responses:
+        '204':
+          description: 删除成功
+
+  /rest/biz/v1/ephemeral/rooms/{roomId}:
+    delete:
+      summary: 销毁整个房间
+      description: 手动触发强制物理删除该房间及其所有关联的参与者和消息数据。
+      tags:
+        - Ephemeral
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 房间已被彻底销毁
+
+components:
+  schemas:
+    CreateRoomRequest:
+      type: object
+      required:
+        - ttlSeconds
+        - createdBy
+      properties:
+        title:
+          type: string
+          description: 可选公开名称（不含敏感内容）
+        ttlSeconds:
+          type: integer
+          description: 存活秒数（60 ~ 604800，即 1分钟 ~ 7天）
+        createdBy:
+          type: string
+          description: 创建者匿名 ID（客户端生成 UUID）
+
+    RoomInfoResponse:
+      type: object
+      properties:
+        roomId:
+          type: string
+        shortCode:
+          type: string
+        title:
+          type: string
+        expireAt:
+          type: string
+          format: date-time
+        participantCount:
+          type: integer
+
+    JoinRoomRequest:
+      type: object
+      required:
+        - participantId
+      properties:
+        participantId:
+          type: string
+          description: 客户端生成的匿名 UUID
+        nicknameCipher:
+          type: string
+          description: 加密昵称（可为 null）
+
+    SendMessageRequest:
+      type: object
+      required:
+        - senderId
+        - cipherText
+        - iv
+      properties:
+        senderId:
+          type: string
+        cipherText:
+          type: string
+          description: AES-GCM 密文（Base64）
+        iv:
+          type: string
+          description: 随机初始向量（Base64，每条消息独立）
+
+    EphemeralMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        roomId:
+          type: string
+        senderId:
+          type: string
+        cipherText:
+          type: string
+        iv:
+          type: string
+        sentAt:
+          type: string
+          format: date-time
+        deleted:
+          type: boolean
