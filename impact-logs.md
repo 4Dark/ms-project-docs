@@ -3,6 +3,33 @@
 > 记录每次重大修改对其他工程的潜在影响。
 
 
+## [2026-05-28] 阅后即焚短链重定向与自适应 WebSocket 长连接故障修复
+
+### 修改概述
+我们完成了对阅后即焚（Ephemeral Room）业务下短链重定向和 WebSocket 连接在生产及预览分支环境下的高可用修复：
+- **Cloudflare Pages 代理与显式重定向治理**: 修改了前端 `_redirects` 规则，将 `/s/*` 的短链接口重写代理（200）改为显式 302 重定向，彻底解决了 Pages 对外部 API 隐式代理不支持导致的 `:splat` 参数重定向丢失问题。
+- **后端动态 Referer 感知与绝对重定向**: 在 `ShortLinkController` 中通过注入 `Referer` 请求头，动态解析请求来源域名（Scheme + Authority），实现绝对路径 302 重定向跳转回对应前端域名（如 `https://feature-ephemerallink.ms-ng-view.pages.dev/room/{code}`）。该做法完美避开了 API 网关相对重定向产生的 404 故障，无缝支持了生产环境和 Cloudflare Pages 各预览分支域名。
+- **自适应 WebSocket 直连连接**: 在 `ephemeral.adapter.ts` 中设计了自适应 WebSocket URL 解析方法 `getWsUrl()`。在 localhost 开发环境，仍保持连接本地前端 Host 并利用 `proxy.conf.json` 执行网关代理；在生产环境与 CDN 托管的分支预览环境下，直接提取 `environment.VITE_API_URL` 中的后端 API 域名建立 secure WebSocket（`wss:`）直连。这规避了 Pages 平台对 WebSocket 协议升级的阻断，保证了消息频道的绝对连通。
+- **单元测试保障**: 新增了 `ShortLinkControllerTest.java` 并通过了全部 4 个 TDD 测试场景，确保了绝对路径解析和相对路径降级逻辑 100% 正常。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-ng-view** | ✅ 核心特性 | 优化了 WebSocket (STOMP) 连接域名构建逻辑，消除了 Pages 环境下的网络重连报错。更新了 `_redirects` 配置文件。 |
+| **ms-java-biz** | ✅ 核心特性 | 重构了短链跳转控制层以接收 `Referer` 实施绝对域名跳转，编写并跑通了 ShortLink 单元测试。 |
+| **docs** | ✅ 文档更新 | 撰写了完整的事故 RCA 复盘日志，并更新了本影响评估汇总。 |
+
+### 风险等级: 🟢 低
+- 代码逻辑完全向下兼容，若无 `Referer` 请求头，后端自动无缝回退到旧的相对路径跳转，零中断，安全度高。
+- 前端生产级构建编译成功，无任何打包异常。
+
+### 验证计划
+- [x] 验证 `ShortLinkControllerTest` 中的 4 个测试场景（含 Referer 匹配、无 Referer 降级）100% 通过。
+- [x] 验证前端项目打包构建无任何 TS 警告或语法报错。
+
+---
+
 ## [2026-05-19] ms-py-agent 国际化(i18n) 全栈落地与 Accept-Language 动态适配
 
 ### 修改概述
