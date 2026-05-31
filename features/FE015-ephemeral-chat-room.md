@@ -60,7 +60,8 @@ TTL到期：Spring Scheduler 定时扫表，物理删除房间+消息+参与者�
 
 ### 3.3 短链机制
 
-- 格式：`/s/{8位Base62}` → 302 重定向到 `/room/{shortCode}`
+- **路径重定向**：`/s/{8位Base62}` → 302 重定向到 `/#/room/{shortCode}`（兼容前端 Angular 哈希路由 `HashLocationStrategy`，确保先加载根路径 SPA，再由前端解析哈希以防止 404 故障）
+- **多域名自适应**：通过在网关透传的 `X-Forwarded-Host` 及 `X-Forwarded-Proto` 动态构建基地址，并在对比主域名（如 122577.xyz）后自适应识别外部开发/预览环境与常规生产环境，严格保持访问时的实际域名一致性。
 - 过期返回 `410 Gone`（区分"不存在"和"已销毁"）
 - 无 OG Meta 标签，响应头 `X-Robots-Tag: noindex, nofollow`
 - 社交平台爬虫获取空壳 302，无法预览任何内容
@@ -201,6 +202,20 @@ TTL到期：Spring Scheduler 定时扫表，物理删除房间+消息+参与者�
 * **表现**：编写 `ephemeral.usecase.spec.ts` 单元测试时，通过 `as any` 等宽松转换了 Mock 的 WsMessage 消息，导致在开发服务器启动（Vite / Angular Compiler 的严苛 TypeScript 构建检测）时抛出 `TS2353` 错误（提示 `roomId`, `timestamp` 属性在 WsMessage 声明中未定义）。
 * **原因**：测试用例的 Mock 对象不符合定义好的 Domain 纯洁模型（`WsMessage` 模型只包含 `type`, `senderId`, `payload`, `iv`），且部分 `id` 属性由 `number` 错写为了 `string`。
 * **解法**：重构测试用例，严格对齐 `ephemeral.model.ts` 下的接口格式，为 `LEAVE` 补充必要的 `iv: ''` 属性并去除无用冗余字段，使开发服务器编译在 30 秒内迅速重归 Clean 编译，并保证 52 条 Jest 测试用例 100% 通过。
+
+### 9.3 短链重定向哈希路由丢失（404 故障）与域名跨越跑偏问题
+* **表现**：
+  1. 用户点击短链时，系统重定向到 `/room/{code}` 而非哈希路由 `/#/room/{code}`。在 Angular 的 `HashLocationStrategy` 模式下，直接请求服务端 `/room/...` 路径会导致网关返回 404 错误。
+  2. 用户访问 `https://122577.xyz/s/p5RaN000` 时，若来源 Referer 包含 `dark.122577.xyz`，系统会错误跳转至 `https://dark.122577.xyz`，未能保持用户当前的访问域名。
+* **原因**：
+  1. 后端 `ShortLinkController` 之前硬编码路径前缀为 `/room/`。
+  2. 在计算跳转前端基地址时过早且无条件优先信任 `Referer`。且由于微服务部署在网关后，Servlet 的 Host 默认为内网服务名（`ms-java-biz`），无法直接使用 `request.getServerName()`。
+* **解法**：
+  1. 将重定向路径前缀修正为 `/#/room/`，借由哈希锚点将解析下放到浏览器端的 Angular 路由处理。
+  2. 引入 `getBaseDomain(String host)` 工具函数动态解析主域名/二级域名（如将 `dark.122577.xyz` 提取为 `122577.xyz`）。通过将配置的生产根域名与引荐方根域名比对实现**域名自适应优先级**：
+     - 若 `Referer` 存在且其主域名与生产主域名不一致（如 `*.pages.dev`、`localhost` 等开发环境），**优先使用 Referer 域名**，确保联调测试能流转回对应分支。
+     - 若同属生产主域名（同源）或 Referer 为空，**优先使用访问时的实际域名（`X-Forwarded-Host` / `Host`）**，彻底避免跨二级域名越权或跑偏。
+  3. **高并发性能加固**：使用手动构造注入，在实例化阶段一次性计算并缓存 `productionBaseDomain`；将 IP 校验正则静态预编译，消除每次请求的重复开销。
 
 ---
 
