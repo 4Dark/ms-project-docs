@@ -13,4 +13,4 @@
 首个由该编排流接管的端到端开发验证任务为：
 **"Chat 消息 Like/Dislike 反馈 + 对话重新生成"** (涉及 ms-ng-view UI组件, ms-py-agent 会话处理, ms-java-biz 持久化)
 
-详细的技术架构和实施方案见：`ms-ai-devops/docs/features/FE001-ai-dev-team.md`
+详细的技术架构和实施方案见：`ms-ai-devops/ms-project-docs/features/FE001-ai-dev-team.md`

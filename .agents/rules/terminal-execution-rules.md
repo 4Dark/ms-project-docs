@@ -21,11 +21,11 @@ Do not execute raw commands without this prefix, otherwise it will result in "co
 
 | 工程名 (Project) | 规则文件路径 (Relative Path) | 说明 |
 | :--- | :--- | :--- |
-| **ms-java-gateway** | `.agent/rules/ai-code-ws.md` | Spring Cloud Gateway 规范 |
-| **ms-java-biz** | `.agent/rules/ai-code-ws.md` | Java RAG & MCP 规范 |
-| **ms-py-agent** | `.agent/rules/ai-code-ws.md` | FastAPI & LangGraph 规范 |
-| **ms-ng-view** | `.agent/rules/ai-code-ws.md` | Angular & RxJS 规范 |
-| **docs** | `.agents/rules/CONTRIBUTING.md` | 全局流程与 RAG 规范 |
-| **docs** | `.agents/rules/AGENTS_ENV.md` | 环境与终端执行约束 (本文件) |
+| **ms-java-gateway** | `.agent/rules/role-context.md` | Spring Cloud Gateway 规范 |
+| **ms-java-biz** | `.agent/rules/role-context.md` | Java RAG & MCP 规范 |
+| **ms-py-agent** | `.agent/rules/role-context.md` | FastAPI & LangGraph 规范 |
+| **ms-ng-view** | `.agent/rules/role-context.md` | Angular & RxJS 规范 |
+| **ms-project-docs** | `.agents/rules/global-project-workflow.md` | 全局流程与 RAG 规范 |
+| **ms-project-docs** | `.agents/rules/terminal-execution-rules.md` | 环境与终端执行约束 (本文件) |
 
-**约束 (Constraint)**: 严禁在工程根目录下直接新建 `ai-code-ws.md`，所有 Workspace 级别的经验总结必须追加到上述指定的 `.agent/rules/` 目录下。
+**约束 (Constraint)**: 严禁在工程根目录下直接新建 `ai-code-ws.md`，所有 Workspace 级别的经验总结必须追加到上述指定的 `.agent/rules/` 或 skills 目录下。

@@ -11,4 +11,4 @@
 
 ## 涉及子工程
 - **ms-java-biz**: 实现分页控制器、应用服务与仓储层数据库分页。
-- **docs**: 更新 API 契约文档 (`MsJavaBiz-KnowledgeBase-v1.yaml`)。
+- **ms-project-docs**: 更新 API 契约文档 (`MsJavaBiz-KnowledgeBase-v1.yaml`)。

@@ -36,7 +36,7 @@
   - `app/services/prompt_service.py`：重构硬编码消息
   - `app/api/routers/kb.py`：重构硬编码消息
   - `app/agent/subgraphs/rag_graph.py`：重构硬编码消息
-- **docs**:
+- **ms-project-docs**:
   - 维护本文档
 
 ## 4. 实施步骤

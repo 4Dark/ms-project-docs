@@ -66,7 +66,7 @@
      - `DEP_0102` (格式校验失败)：模板中包含未定义或冲突的变量。
      - `DEP_0503` (服务暂不可用)：微服务未向 Nacos 注册或发生连接/读取超时。
      - `DEP_0500` (外部调用异常)：意外的服务器内部错误。
-   - 所有异常与错误码信息已与 [/docs/api-contracts/MsJavaBiz-PromptManagement-v1.yaml](file:///Users/pei/projects/docs/api-contracts/MsJavaBiz-PromptManagement-v1.yaml) 及全局 [/docs/api-contracts/ErrorCodeRegistry.md](file:///Users/pei/projects/docs/api-contracts/ErrorCodeRegistry.md) 完成完美对齐与同步维护。
+   - 所有异常与错误码信息已与 [/ms-project-docs/api-contracts/MsJavaBiz-PromptManagement-v1.yaml](file:///Users/pei/projects/ms-project-docs/api-contracts/MsJavaBiz-PromptManagement-v1.yaml) 及全局 [/ms-project-docs/api-contracts/ErrorCodeRegistry.md](file:///Users/pei/projects/ms-project-docs/api-contracts/ErrorCodeRegistry.md) 完成完美对齐与同步维护。
 
 3. **前端零侵入“虚拟源级警示”传播方案**：
    - 检索子图在捕获到提示词加载异常时，会主动在回复消息的召回来源 `sources` 最上方拼接“虚拟警示来源”（例如 `⚠️ 格式模板加载异常` 或 `⚠️ 主题模板加载异常`），详细指明故障错误码（如 `DEP_0503`）以及系统采取的自动降级问答机制。

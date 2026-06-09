@@ -77,6 +77,61 @@ paths:
         '404':
           description: Task not found
 
+  /rest/biz/v1/ai-dev/profiles:
+    get:
+      summary: Get all AI Dev Agent Profiles
+      description: Retrieve a list of all configured AI agent profiles (e.g., Planner, Coder, Reviewer).
+      operationId: listAiDevAgentProfiles
+      tags:
+        - AiDevProfile
+      responses:
+        '200':
+          description: A list of AI Dev Agent Profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AiDevAgentProfileDTO'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  /rest/biz/v1/ai-dev/profiles/{roleName}:
+    put:
+      summary: Update an AI Dev Agent Profile
+      description: Updates the configuration for a specific AI agent role.
+      operationId: updateAiDevAgentProfile
+      tags:
+        - AiDevProfile
+      parameters:
+        - name: roleName
+          in: path
+          required: true
+          description: The role name of the agent to update
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiDevAgentProfileDTO'
+      responses:
+        '200':
+          description: Profile successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiDevAgentProfileDTO'
+        '400':
+          description: Invalid request body
+        '401':
+          description: Unauthorized
+        '404':
+          description: Profile not found
+
 components:
   schemas:
     AiDevTaskResponse:
@@ -109,3 +164,28 @@ components:
           type: string
           format: date-time
           description: Timestamp when the task was last updated
+
+    AiDevAgentProfileDTO:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the profile
+        roleName:
+          type: string
+          description: The name of the AI role (e.g., PLANNER, CODER)
+        baseUrl:
+          type: string
+          description: The base URL of the LLM API
+        apiToken:
+          type: string
+          description: The API token for authentication
+        modelName:
+          type: string
+          description: The model name to use
+        avatar:
+          type: string
+          description: Avatar URL for the agent
+        systemPrompt:
+          type: string
+          description: The system prompt guiding the agent's behavior

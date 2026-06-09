@@ -1,5 +1,11 @@
 ---
-trigger: always_on
+name: global-coding-standards
+description: >
+  全局编程规范 (Global Coding Standards)。在以下场景下加载：
+  - 跨多个工程的架构评审或代码规范讨论
+  - 新工程初始化时需要了解统一规范
+  - 讨论命名规范、函数设计原则、错误处理策略时
+  - 对 DEP_ 错误码或国际化规范有疑问时
 ---
 
 # 全局编程规范 (Global Coding Standards)
@@ -10,7 +16,7 @@ AI 在生成代码时应遵循以下逻辑，旨在保证代码的低耦合、�
 
 ### 1. 命名约定 (Naming Conventions)
 * **语义化**: 变量名必须反映其用途（如 `is_user_active` 优于 `flag`）。
-* **格式一致性**: 
+* **格式一致性**:
   * Python: 函数与变量用 `snake_case`，类名用 `PascalCase`。
   * Java/TS: 变量与方法用 `camelCase`，类名用 `PascalCase`。
 * **常量**: 全大写加下划线，例如 `MAX_RETRY_COUNT`。
@@ -22,7 +28,7 @@ AI 在生成代码时应遵循以下逻辑，旨在保证代码的低耦合、�
 * **尽早返回 (Early Return)**: 优先处理异常边界情况，减少 `if-else` 嵌套深度。
 
 ### 3. 注释与文档 (Documentation)
-* **代码自解释**: 良好的命名应减少注释需求。注释应解释“为什么”这么做，而非“做了什么”。
+* **代码自解释**: 良好的命名应减少注释需求。注释应解释"为什么"这么做，而非"做了什么"。
 * **标准格式**: Python 必须包含 Docstring，Java 必须包含 Javadoc，TS 必须包含 TSDoc。
 * **类型注解**: 强类型语言（Java/TypeScript）严禁大量使用 `Any`/`Object`；Python 建议标注类型提示（Type Hints）。
 
@@ -34,10 +40,9 @@ AI 在生成代码时应遵循以下逻辑，旨在保证代码的低耦合、�
 ### 5. 全局错误码规范 (Global Error Codes)
 * **唯一性与前缀**: 跨服务通信的业务异常必须使用全局唯一的错误码，统一以 `DEP_` 开头。
 * **分段管理**: 不同业务模块分配特定号段（如 Prompt 管理使用 `DEP_0100-0199`），严禁号段重叠。
-* **中央注册**: 所有新增错误码必须同步记录至 `/docs/api-contracts/ErrorCodeRegistry.md`，作为前后端与微服务间唯一的契约参考。
+* **中央注册**: 所有新增错误码必须同步记录至 `/ms-project-docs/api-contracts/ErrorCodeRegistry.md`，作为前后端与微服务间唯一的契约参考。
 
 ## 二、 架构规范 (Architectural Standards)
-用于指导 AI 如何组织文件结构和处理组件间的通信。
 
 ### 1. 工程目录结构自文档化 (Project Structure Documentation)
 * **README 维护**: 每个子工程的根目录下必须包含 `README.md`，并在其中清晰地列出工程的目录结构及其职责。
