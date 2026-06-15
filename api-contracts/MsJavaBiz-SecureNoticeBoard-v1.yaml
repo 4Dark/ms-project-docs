@@ -1,0 +1,183 @@
+openapi: 3.0.0
+info:
+  title: MsJavaBiz Secure Notice Board API
+  description: APIs for managing announcements and secure notice board items.
+  version: 1.0.0
+servers:
+  - url: /rest/biz/v1
+paths:
+  /announcements:
+    get:
+      summary: Get all announcements
+      operationId: getAnnouncements
+      responses:
+        '200':
+          description: A list of announcements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Announcement'
+    post:
+      summary: Create a new announcement
+      operationId: createAnnouncement
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnouncementRequest'
+      responses:
+        '201':
+          description: Announcement created successfully
+
+  /announcements/{id}:
+    get:
+      summary: Get a single announcement by ID
+      operationId: getAnnouncementById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: X-Extraction-Code
+          in: header
+          required: true
+          description: Global extraction code for secure access
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The announcement details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Announcement'
+        '403':
+          description: Invalid extraction code
+
+  /notice-board-items:
+    get:
+      summary: Get all valid notice board items
+      operationId: getNoticeBoardItems
+      responses:
+        '200':
+          description: A list of notice board items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NoticeBoardItem'
+    post:
+      summary: Create a new notice board item
+      operationId: createNoticeBoardItem
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoticeBoardItemRequest'
+      responses:
+        '201':
+          description: Notice board item created successfully
+
+  /notice-board-items/{id}/track-view:
+    post:
+      summary: Track view event for a notice board item
+      operationId: trackNoticeBoardItemView
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: View tracked successfully
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Announcement:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        content:
+          type: string
+        createTime:
+          type: string
+          format: date-time
+        updateTime:
+          type: string
+          format: date-time
+    AnnouncementRequest:
+      type: object
+      required:
+        - title
+        - content
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+    NoticeBoardItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        targetClient:
+          type: string
+        usageDetails:
+          type: string
+        referenceUrl:
+          type: string
+        contentUrl:
+          type: string
+        expireTime:
+          type: string
+          format: date-time
+        createTime:
+          type: string
+          format: date-time
+        updateTime:
+          type: string
+          format: date-time
+        lastViewedTime:
+          type: string
+          format: date-time
+    NoticeBoardItemRequest:
+      type: object
+      required:
+        - targetClient
+        - contentUrl
+        - expireTime
+      properties:
+        targetClient:
+          type: string
+        usageDetails:
+          type: string
+        referenceUrl:
+          type: string
+        contentUrl:
+          type: string
+        expireTime:
+          type: string
+          format: date-time

@@ -1,3 +1,13 @@
+
+## [2026-06-13] Casdoor JWT 字段重映射与数据库字段同步
+- **涉及工程**: `ms-java-gateway`, `ms-java-biz`, `ms-ng-view`
+- **变更详情**: 
+  1. `ms-java-gateway` 的 OAuth2 配置增加提取 Casdoor JWT 中的 `displayName` 并重新封装入内部 Token。
+  2. `ms-java-biz` 的 `UserController` 改为从 `SecurityContext` 中的 JWT 解析 `displayName` 和 `picture`（头像）。
+  3. 数据库 `ai_dev_task` 表手动追加 `engine_mode` 字段，以解决与 Entity 及 Mapper 版本不同步的问题。
+- **潜在影响**: 
+  - 依赖于网关身份透传的其他业务（如有）现已能在 `Authorization` 的 JWT 里获取到 `displayName` 和 `picture` 属性，请勿继续依赖 `X-User-Name` Header。
+
 # 影响评估汇总
 
 > 记录每次重大修改对其他工程的潜在影响。
