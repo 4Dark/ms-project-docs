@@ -28,7 +28,7 @@
     - `app/agent/state.py`: 增加 `topic_id` 状态支持。
 
 ## 接口定义
-- **API 合约**: [/docs/api-contracts/MsJavaBiz-PregramerRecipes-v1.yaml](file:///Users/pei/projects/docs/api-contracts/MsJavaBiz-PregramerRecipes-v1.yaml)
+- **API 合约**: [/ms-project-docs/api-contracts/MsJavaBiz-PregramerRecipes-v1.yaml](file:///Users/pei/projects/ms-project-docs/api-contracts/MsJavaBiz-PregramerRecipes-v1.yaml)
 - **对话接口**: `POST /api/agent/chat` (通过透传 `topic_id` 实现美食专用 RAG 与人格切换)。
 
 ## UI 设计

@@ -1,6 +1,6 @@
 {
   "jest.disabledWorkspaceFolders": [
-    "docs",
+    "ms-project-docs",
     "api-contracts",
     "architecture",
     "features",

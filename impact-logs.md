@@ -1,7 +1,47 @@
+
+## [2026-06-13] Casdoor JWT 字段重映射与数据库字段同步
+- **涉及工程**: `ms-java-gateway`, `ms-java-biz`, `ms-ng-view`
+- **变更详情**: 
+  1. `ms-java-gateway` 的 OAuth2 配置增加提取 Casdoor JWT 中的 `displayName` 并重新封装入内部 Token。
+  2. `ms-java-biz` 的 `UserController` 改为从 `SecurityContext` 中的 JWT 解析 `displayName` 和 `picture`（头像）。
+  3. 数据库 `ai_dev_task` 表手动追加 `engine_mode` 字段，以解决与 Entity 及 Mapper 版本不同步的问题。
+- **潜在影响**: 
+  - 依赖于网关身份透传的其他业务（如有）现已能在 `Authorization` 的 JWT 里获取到 `displayName` 和 `picture` 属性，请勿继续依赖 `X-User-Name` Header。
+
 # 影响评估汇总
 
 > 记录每次重大修改对其他工程的潜在影响。
 
+
+## [2026-05-28] 阅后即焚短链重定向与自适应 WebSocket 长连接故障修复
+
+### 修改概述
+我们完成了对阅后即焚（Ephemeral Room）业务下短链重定向和 WebSocket 连接在生产及预览分支环境下的高可用修复：
+- **Cloudflare Pages 代理与显式重定向治理**: 修改了前端 `_redirects` 规则，将 `/s/*` 的短链接口重写代理（200）改为显式 302 重定向，彻底解决了 Pages 对外部 API 隐式代理不支持导致的 `:splat` 参数重定向丢失问题。
+- **后端动态 Referer 感知与绝对重定向**: 在 `ShortLinkController` 中通过注入 `Referer` 请求头，动态解析请求来源域名（Scheme + Authority），实现绝对路径 302 重定向跳转回对应前端域名（如 `https://feature-ephemerallink.ms-ng-view.pages.dev/room/{code}`）。该做法完美避开了 API 网关相对重定向产生的 404 故障，无缝支持了生产环境和 Cloudflare Pages 各预览分支域名。
+- **无 Referer 兜底绝对路径重定向**: 针对用户直接输入/粘贴短链或社交应用内打开无 `Referer` 头访问导致后端退化为相对重定向而路由至网关域名（引致 404 故障）的问题，引入了 `app.frontend-url` 配置。当 `Referer` 为空或不可解析时，自动兜底重定向至默认前端域名（如 `https://122577.xyz/room/{code}`），彻底消除了 404 隐患。
+- **移除失焦内容隐藏与全局遮罩 (UI 体验升级)**: 彻底移除了当页面失去焦点（如切换标签页、浏览器最小化或移动端切换应用）时自动对通讯空间内容模糊并覆盖全局灰色遮罩的特性，删除了相关的组件层 `HostListener` 和模版级 overlay DOM 结构，极大改善了高频切换窗口时的交互连贯性与整体用户体验。
+- **STOMP 断线重连时间调优**: 在前端 `ephemeral.adapter.ts` 的 STOMP over WebSocket 连接参数中，将 `reconnectDelay`（断线自动重连间隔时间）从原先的 2000ms 调整为更加合理、对底层服务器更加友好的 8000ms (8秒)，在高频重连与连接抖动时能显著降低网络重试风暴与资源开销。
+- **自适应 WebSocket 直连连接**: 在 `ephemeral.adapter.ts` 中设计了自适应 WebSocket URL 解析方法 `getWsUrl()`。在 localhost 开发环境，仍保持连接本地前端 Host 并利用 `proxy.conf.json` 执行网关代理；在生产环境与 CDN 托管的分支预览环境下，直接提取 `environment.VITE_API_URL` 中的后端 API 域名建立 secure WebSocket（`wss:`）直连。这规避了 Pages 平台对 WebSocket 协议升级的阻断，保证了消息频道的绝对连通。
+- **单元测试保障**: 新增并更新了 Java 端 `ShortLinkControllerTest.java` 覆盖 Referer 匹配、无 Referer 兜底等全部 TDD 测试场景；同时通过了前端全量 14 个 Jest 测试套件（52/52 全部成功通过），确保两端架构的高度健壮与稳固。
+
+### 涉及范围
+
+| 子工程 | 影响程度 | 分析 |
+|--------|----------|------|
+| **ms-ng-view** | ✅ 核心特性 | 优化了 WebSocket 连接域名与 STOMP 重连参数（8s）；彻底移除了失焦模糊内容遮罩（isBlurred）相关的逻辑与 HTML 代码。 |
+| **ms-java-biz** | ✅ 核心特性 | 重构了短链跳转控制层以接收 `Referer` 实施绝对域名跳转，引入配置兜底，编写并跑通了 ShortLink 单元测试。 |
+| **ms-project-docs** | ✅ 文档更新 | 撰写了完整的事故 RCA 复盘日志，并更新了本影响评估汇总。 |
+
+### 风险等级: 🟢 低
+- 代码逻辑完全向下兼容，若无 `Referer` 请求头，后端自动无缝回退到旧的相对路径跳转，零中断，安全度高。
+- 前端生产级构建编译成功，无任何打包异常。
+
+### 验证计划
+- [x] 验证 `ShortLinkControllerTest` 中的 4 个测试场景（含 Referer 匹配、无 Referer 降级）100% 通过。
+- [x] 验证前端项目打包构建无任何 TS 警告或语法报错。
+
+---
 
 ## [2026-05-19] ms-py-agent 国际化(i18n) 全栈落地与 Accept-Language 动态适配
 
@@ -16,7 +56,7 @@
 | 子工程 | 影响程度 | 分析 |
 |--------|----------|------|
 | **ms-py-agent** | ✅ 核心特性 | 新增 `app/core/i18n` 模块，通过 ContextVar 中间件自适应解析 Accept-Language 头，完成全链路 i18n 适配。 |
-| **docs** | ✅ 文档更新 | 撰写了完整的 i18n 特性实施计划与本修改评估日志。 |
+| **ms-project-docs** | ✅ 文档更新 | 撰写了完整的 i18n 特性实施计划与本修改评估日志。 |
 
 ### 风险等级: 🟢 低
 - ContextVar 完全线程与协程安全，在请求结束时由 ContextVar 机制自动重置，不存在跨请求污染的风险。
@@ -43,7 +83,7 @@
 |--------|----------|------|
 | **ms-py-agent** | ✅ 核心特性 | 重构了提示词渲染与错误捕获机制，自动过滤并输出标准化虚拟异常来源卡片至 SSE 流。 |
 | **ms-ng-view** | ✅ 平滑适配 | 零侵入地实现了对提示词异常的警示渲染，全部 Jest 测试用例 100% 绿灯。 |
-| **docs** | ✅ 文档更新 | 详细记录了本次跨服务异常适配及影响分析。 |
+| **ms-project-docs** | ✅ 文档更新 | 详细记录了本次跨服务异常适配及影响分析。 |
 
 ### 风险等级: 🟢 低
 - 代码变动极度精准，通过虚拟引用卡片将异常优雅传播给前端，完美融合既有 UI，无任何界面重写风险。
@@ -70,7 +110,7 @@
 | 子工程 | 影响程度 | 分析 |
 |--------|----------|------|
 | **ms-ng-view** | ✅ 核心适配 | 彻底重构了前端状态流与展示逻辑，消除了客户端切片，打通了服务器端分页与响应式 Signal 交互。 |
-| **docs** | ✅ 契约对齐 | 更新了 OpenAPI 规范定义，确立了 `page` 的必填约束。 |
+| **ms-project-docs** | ✅ 契约对齐 | 更新了 OpenAPI 规范定义，确立了 `page` 的必填约束。 |
 
 ### 风险等级: 🟢 低
 - 属于物理分页特性的前端落地，不仅极大减轻了前端处理大数据量时的内存负载，更借助 Angular Signals 机制保证了 100% 的渲染稳定性与响应速度。
@@ -108,7 +148,7 @@
 ---
 
 ## [2026-05-17] 通用与领域专有知识库文档表结构合并重构（ms_recipe_document 并入 ms_knowledge_document）
-> 关联决策: [009-unified-knowledge-document-schema-refactoring.md](file:///Users/pei/projects/docs/architecture/009-unified-knowledge-document-schema-refactoring.md)
+> 关联决策: [009-unified-knowledge-document-schema-refactoring.md](file:///Users/pei/projects/ms-project-docs/architecture/009-unified-knowledge-document-schema-refactoring.md)
 
 ### 修改概述
 为了消除知识库底座在“通用文档元数据”与“领域特定结构化元数据”之间的冗余，我们将原先专属于食谱领域的文档主表 `ms_recipe_document` 与分块表 `ms_recipe_chunk` 合并入通用知识库文档表 `ms_knowledge_document` 与分块表 `ms_knowledge_chunk`。
@@ -170,7 +210,7 @@
 
 
 ## [2026-05-17] 统一知识库构建接口前缀为 /rest/kb/v1/ 并修复 404 的问题
-> 关联问题复盘: [2026-05-17-kb-build-endpoint-nested-prefix-404.md](file:///Users/pei/projects/docs/incidents/2026-05-17-kb-build-endpoint-nested-prefix-404.md)
+> 关联问题复盘: [2026-05-17-kb-build-endpoint-nested-prefix-404.md](file:///Users/pei/projects/ms-project-docs/incidents/2026-05-17-kb-build-endpoint-nested-prefix-404.md)
 
 ### 修改概述
 将增量构建端点彻底纳入 `/rest/kb/v1/` 统一路由命名空间中。修改接口并扩展 API 网关路由及前端 API 常量配置，实现系统整体 API 路径的规范化和高内聚。
@@ -228,7 +268,7 @@
   - 在前端 `ms-ng-view` 页面中，支持 `selectedTopic()?.templateName === 'recipe' || selectedTopic()?.name === '菜谱'` 匹配判定，从而兼容系统预制和用户手动创建的情况。
   - 在 `chat.component.ts` 的自动选择菜谱逻辑中，支持 `t.templateName === 'recipe' || t.name === '菜谱'` 匹配判定，确保美食卡片快捷功能绝对可用。
 - **全量菜谱物理路径同步**:
-  - 在 `ms-py-agent` 端的配置 `app/core/config.py` 和构建服务 `recipe_build_service.py` 中，同步更新 `CONFIG_DATA_PATH` 的默认兜底值从 `/Users/pei/projects/docs/recipes` 变更为 `/tmp/ai_knowledge_uploads/recipes`，从而保持与 Java 后端 `recipe-dir` 配置路径的完全一致性。
+  - 在 `ms-py-agent` 端的配置 `app/core/config.py` 和构建服务 `recipe_build_service.py` 中，同步更新 `CONFIG_DATA_PATH` 的默认兜底值从 `/Users/pei/projects/ms-project-docs/recipes` 变更为 `/tmp/ai_knowledge_uploads/recipes`，从而保持与 Java 后端 `recipe-dir` 配置路径的完全一致性。
 
 ### 涉及范围
 
@@ -250,7 +290,7 @@
 ---
 
 ## [2026-05-17] 修复 ms-java-biz 启动时 schema 相对路径刷新及本地 URL 硬编码问题
-> 关联问题复盘: [2026-05-17-mcp-schema-fetch-relative-url-bug.md](file:///Users/pei/projects/docs/incidents/2026-05-17-mcp-schema-fetch-relative-url-bug.md)
+> 关联问题复盘: [2026-05-17-mcp-schema-fetch-relative-url-bug.md](file:///Users/pei/projects/ms-project-docs/incidents/2026-05-17-mcp-schema-fetch-relative-url-bug.md)
 
 ### 修改概述
 修复了 `ms-java-biz` 启动时自动刷新内置插件（如 `java-biz`）的 Schema 失败问题，并消除了整个模块中本地服务器 URL 的硬编码。
@@ -282,7 +322,7 @@
 
 
 ## [2026-05-13] ms-py-agent 领域模型纯洁性重构与规范对齐
-> 关联决策: [004-ms-py-agent-domain-purity-refactor.md](file:///Users/pei/projects/docs/architecture/004-ms-py-agent-domain-purity-refactor.md)
+> 关联决策: [004-ms-py-agent-domain-purity-refactor.md](file:///Users/pei/projects/ms-project-docs/architecture/004-ms-py-agent-domain-purity-refactor.md)
 
 ### 修改概述
 按照《Python 架构与代码规范指南》，对 `ms-py-agent` 的领域模型进行了合规性重构。
@@ -308,7 +348,7 @@
 
 
 ## [2026-05-10] MCP 插件市场（能力集）特性全栈落地
-> 关联特性: [FE014-mcp-plugin-market.md](file:///Users/pei/projects/docs/features/FE014-mcp-plugin-market.md)
+> 关联特性: [FE014-mcp-plugin-market.md](file:///Users/pei/projects/ms-project-docs/features/FE014-mcp-plugin-market.md)
 
 ### 修改概述
 实现了基于白名单模式的 MCP 插件管理系统，支持在前端动态启用/禁用 MCP 服务端。
@@ -339,7 +379,7 @@
 
 
 ## [2026-05-10] ms-py-agent LangGraph 路由架构重构与多 Agent 扩展
-> 关联特性: [FE013-langgraph-router-architecture.md](file:///Users/pei/projects/docs/features/FE013-langgraph-router-architecture.md)
+> 关联特性: [FE013-langgraph-router-architecture.md](file:///Users/pei/projects/ms-project-docs/features/FE013-langgraph-router-architecture.md)
 
 ### 修改概述
 将 `ms-py-agent` 的单体 LangGraph 架构重构为**路由架构（Router Pattern）**，并预留了两种多 Agent 对接模式的完整扩展点。
@@ -375,7 +415,7 @@
 
 
 ## [2026-05-03] 聊天页面引入 Markdown 渲染支持
-> 关联特性: [FE011-chat-markdown-rendering.md](file:///Users/pei/projects/docs/features/FE011-chat-markdown-rendering.md)
+> 关联特性: [FE011-chat-markdown-rendering.md](file:///Users/pei/projects/ms-project-docs/features/FE011-chat-markdown-rendering.md)
 
 ### 修改概述
 为 `ms-ng-view` 的聊天页面集成了 `ngx-markdown` 引擎，解决了 AI 返回内容缺乏排版的问题。
@@ -430,7 +470,7 @@
 ---
 
 ## [2026-05-01] 引入 WebFlux/WebClient 增强跨服务调用能力
-> 关联决策: [007-webclient-migration-decision.md](file:///Users/pei/projects/docs/architecture/007-webclient-migration-decision.md)
+> 关联决策: [007-webclient-migration-decision.md](file:///Users/pei/projects/ms-project-docs/architecture/007-webclient-migration-decision.md)
 
 ### 修改概述
 在 `ms-java-biz` 中引入了 `WebFlux` 栈，并采用 `WebClient` 作为新的标准化跨服务调用客户端，替代了处于维护模式的 `RestTemplate`。
@@ -457,7 +497,7 @@
 ---
 
 ## [2026-05-01] 全链路可观测性与错误标准化增强
-> 关联特性: [FE010-standardized-observability-and-error-response.md](file:///Users/pei/projects/docs/features/FE010-standardized-observability-and-error-response.md)
+> 关联特性: [FE010-standardized-observability-and-error-response.md](file:///Users/pei/projects/ms-project-docs/features/FE010-standardized-observability-and-error-response.md)
 
 ### 修改概述
 增强了 `ms-java-gateway` 的全链路日志可见性与异常排查能力。
@@ -494,7 +534,7 @@
 - **认证透传**: 在 `ms-java-biz` 中实现了 JWT Token 自动透传机制。
     - **Filter 增强**: `JwtAuthenticationFilter` 开始存储原始 Token。
     - **Interceptor 引入**: 新增 `JwtTokenInterceptor` 并注册至全局 `RestTemplate`。
-- **经验沉淀**: 建立了详细的 [RCA 文档](file:///Users/pei/projects/docs/incidents/2026-05-01-java-biz-call-py-agent-failed.md)，并同步更新了各工程的 `ai-code-ws.md` 规范。
+- **经验沉淀**: 建立了详细的 [RCA 文档](file:///Users/pei/projects/ms-project-docs/incidents/2026-05-01-java-biz-call-py-agent-failed.md)，并同步更新了各工程的 `ai-code-ws.md` 规范。
 
 ### 涉及范围
 
@@ -523,7 +563,7 @@
 - **安全配置**: 在 `ms-java-biz` 的 `application.yaml` 中将 `/error` 路径加入安全白名单。
 - **异常捕获**: 引入了 `GlobalExceptionHandler` (@RestControllerAdvice)，确保异常发生时直接返回标准化 JSON，避免触发 Spring Boot 默认的 `/error` 转发逻辑。
 - **标准化**: 定义了 `ErrorResponse` DTO，保持后端错误响应格式与网关一致（包含 `traceId`, `status`, `message` 等）。
-- **事故复盘**: 建立了详细的 [RCA 文档](file:///Users/pei/projects/docs/incidents/2026-05-01-gateway-403-masking.md)。
+- **事故复盘**: 建立了详细的 [RCA 文档](file:///Users/pei/projects/ms-project-docs/incidents/2026-05-01-gateway-403-masking.md)。
 
 ### 涉及范围
 
@@ -656,7 +696,7 @@
 ### 修改概述
 解决了 `ms-java-biz` 启动时因缺少 `UserDetailsService` 导致的 Spring Boot 自动生成随机安全密码的问题。
 - **配置优化**: 在 `SecurityConfig.java` 中显式定义了空的 `UserDetailsService` Bean，抑制了控制台的 `Using generated security password` 日志。
-- **问题复盘**: 建立了 [RCA: ms-java-biz 启动时产生生成的安全密码日志](file:///Users/pei/projects/docs/incidents/2026-04-30-spring-security-generated-password.md)。
+- **问题复盘**: 建立了 [RCA: ms-java-biz 启动时产生生成的安全密码日志](file:///Users/pei/projects/ms-project-docs/incidents/2026-04-30-spring-security-generated-password.md)。
 
 ### 触发原因
 项目引入了安全模块但未提供用户源，触发了 Spring Boot 的启动兜底行为。
@@ -679,7 +719,7 @@
 解决了 `ms-java-gateway` 在 `dev` 环境下无法连接 Nacos 命名空间以及由于配置缺失导致的 OAuth2 属性绑定崩溃问题。
 - **配置修复**: 在 `bootstrap.yml` 中补全了 `namespace` 配置，对齐了 `ms-java-biz` 的 Nacos 连接规范。
 - **健壮性优化**: 在 `application.yml` 中为 OAuth2 Casdoor Provider 引入了占位符 `issuer-uri`，防止因配置中心未加载导致的服务直接崩溃。
-- **问题复盘**: 建立了 [RCA: ms-java-gateway 连接 Nacos 失败及 OAuth2 属性绑定崩溃](file:///Users/pei/projects/docs/incidents/20260429-nacos-connection-failure.md)。
+- **问题复盘**: 建立了 [RCA: ms-java-gateway 连接 Nacos 失败及 OAuth2 属性绑定崩溃](file:///Users/pei/projects/ms-project-docs/incidents/20260429-nacos-connection-failure.md)。
 
 ### 触发原因
 1. **配置疏漏**: `ms-java-gateway` 的 Bootstrap 阶段未感知环境变量中的 `NACOS_NAMESPACE`。
@@ -709,7 +749,7 @@
 - **架构优化**: 引入了 `chat_sessions` 汇总表，并采用 PostgreSQL 触发器 (Trigger) 实现消息产生时的自动同步，大幅提升会话列表查询性能。
 - **迁移优化**: 修改了 `V1.2__create_chat_sessions.sql`，移除了高开销的存量数据迁移脚本，彻底解决了远程数据库连接超时 (`EOFException`) 的风险。
 - **依赖修复**: 移除了 `pom.xml` 中冲突的 `flyway-database-postgresql:10.10.0`，确保与 Spring Boot 3.2 默认的 Flyway 9 核心包版本一致。
-- **文档沉淀**: 建立了 [ADR-006: 基于数据库触发器的聊天会话汇总同步方案](file:///Users/pei/projects/docs/architecture/006-chat-session-summary-table-trigger-sync.md)。
+- **文档沉淀**: 建立了 [ADR-006: 基于数据库触发器的聊天会话汇总同步方案](file:///Users/pei/projects/ms-project-docs/architecture/006-chat-session-summary-table-trigger-sync.md)。
 
 ### 触发原因
 1. **性能瓶颈**: 实时对千万级消息表进行 `GROUP BY` 聚合查询会话列表在生产环境下不可接受。
@@ -739,7 +779,7 @@
 解决了 `ms-java-gateway` 在处理 OAuth2 登录流程时出现的 `Metaspace OOM` 崩溃，并完成了测试用例的无状态架构适配。
 - **内存优化**: 将 `MaxMetaspaceSize` 从 `64m` 提升至 `128m`，同步提升堆内存至 `256m`，并改用 `G1GC`。
 - **测试适配**: 更新 `RedirectSaveFilterTest.java`，将原有的 Session 断言改为 Cookie 断言，确保测试与当前的无状态架构对齐。
-- **问题复盘**: 在 `docs/incidents/` 建立了详细的 RCA 文档。
+- **问题复盘**: 在 `ms-project-docs/incidents/` 建立了详细的 RCA 文档。
 
 ### 触发原因
 1. **JVM 限制过严**: 64MB 的 Metaspace 不足以承载 Spring Boot 3 + OAuth2 Client 产生的类元数据。
@@ -878,7 +918,7 @@
 ## 2026-04-27 | 全局分布式 JWT 安全校验对齐
 
 ### 修改背景
-为了统一微服务架构下的安全校验逻辑，避免 `ms-java-biz` 等下游服务裸奔，对所有涉及子工程进行了安全对齐。详细决策参见 [ADR 001](file:///Users/pei/projects/docs/architecture/001-distributed-jwt-validation.md)。
+为了统一微服务架构下的安全校验逻辑，避免 `ms-java-biz` 等下游服务裸奔，对所有涉及子工程进行了安全对齐。详细决策参见 [ADR 001](file:///Users/pei/projects/ms-project-docs/architecture/001-distributed-jwt-validation.md)。
 
 ### 影响评估
 | 子工程 | 影响程度 | 核心变更 |

@@ -25,7 +25,7 @@ Prompt 管理特性的核心目标是为系统提供动态的提示词模板管�
   - 运行时通过调用 `ms-java-biz` 获取已激活的 Prompt 内容，并组装上下文发送给 LLM。
 
 ## 3. 接口变动
-新增了以下针对 Prompt 管理的 API，详细定义请参考 `docs/api-contracts/MsJavaBiz-PromptManagement-v1.yaml`。
+新增了以下针对 Prompt 管理的 API，详细定义请参考 `ms-project-docs/api-contracts/MsJavaBiz-PromptManagement-v1.yaml`。
 
 ### 3.1 Management API (后台管理)
 - `GET /rest/biz/v1/prompts/templates`：获取所有 Prompt 模板列表。
